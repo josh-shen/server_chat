@@ -1,6 +1,6 @@
 import bcrypt, pickle, socket
 
-import utils
+from utils import messageDict
 from aes import create_machine
 
 UDP_address = 'localhost'
@@ -26,7 +26,16 @@ class client_API:
         self.udp_client.send(message + salted_password)
     
     # TCP SECTION
-    def CONNECT(self, message, machine):
+    def CONNECT(self, cookie, machine):
+        message = messageDict(self.clientID, "CONNECT", cookie = cookie)
+        unencrypted_bytes = pickle.dumps(message)
+        encrypted_bytes = machine.encrypt_message(unencrypted_bytes)
+        message = self.clientID.encode() + encrypted_bytes
+        self.tcp_client.send(message)
+    
+    def CHAT_REQUEST(self, targetID, cookie):
+        message = messageDict(self.clientID, message_type = "CHAT_REQUEST", targetID = targetID, cookie = cookie)
+        machine = create_machine(self.client_key, self.salt)
         unencrypted_bytes = pickle.dumps(message)
         encrypted_bytes = machine.encrypt_message(unencrypted_bytes)
         message = self.clientID.encode() + encrypted_bytes
