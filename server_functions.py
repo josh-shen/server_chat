@@ -31,14 +31,14 @@ def CONNECTED(socket, machine):
 
 def CHAT_STARTED (socket, target_clientID, machine):
     body = "connected to client with the ID[" + target_clientID +"]" 
-    message = messageDict(senderID = 'Server', targetID=target_clientID, message_type='CHAT_STARTED',message_body=body)
+    message = messageDict(senderID = "SERVER", targetID = target_clientID, message_type = "CHAT_STARTED", message_body = body)
     pickleMessage = pickle.dumps(message)
     encMessage = machine.encrypt_message(pickleMessage) 
     socket.send(encMessage)   
 
 def UNREACHABLE(socket, target_clientID, machine):
     body = "client with ID[" + target_clientID + "] is unreachable"
-    message = messageDict(senderID = "server", targetID = target_clientID, message_type = "UNREACHABLE", message_body = body)
+    message = messageDict(senderID = "SERVER", targetID = target_clientID, message_type = "UNREACHABLE", message_body = body)
     unencrypted_bytes = pickle.dumps(message)
     encrypted_bytes = machine.encrypt_message(unencrypted_bytes)
     socket.send(encrypted_bytes)
