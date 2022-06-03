@@ -40,3 +40,18 @@ class client_API:
         encrypted_bytes = machine.encrypt_message(unencrypted_bytes)
         message = self.clientID.encode() + encrypted_bytes
         self.tcp_client.send(message)
+      
+    def CHAT(self, body, targetID, cookie, machine):
+        message = messageDict(senderID = self.clientID, message_type = "CHAT", message_body = body, targetID = targetID, cookie = cookie)
+        unencrypted_bytes = pickle.dumps(message)
+        encrypted_bytes = machine.encrypt_message(unencrypted_bytes)
+        message = self.clientID.encode() + encrypted_bytes
+        self.tcp_client.send(message)
+    
+    def END_REQUEST(self, targetID):
+        endNotifMessage = messageDict(self.clientID, targetID = targetID, message_type = "END_REQUEST")
+        machine = create_machine(self.client_key, self.salt)
+        unencBytes = pickle.dumps(endNotifMessage)
+        encMessage = machine.encrypt_message(unencBytes)
+        totMessage = self.clientID.encode() + encMessage
+        self.tcp_client.send(totMessage)
