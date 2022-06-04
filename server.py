@@ -1,4 +1,4 @@
-import bcrypt, pickle, queue, socket, select, secrets, threading
+import bcrypt, pickle, queue, socket, select, secrets, time, threading
 from secrets import token_urlsafe
 
 from aes import create_machine
@@ -6,33 +6,38 @@ import server_functions as sv
 import db
 import utils
 
+lock = threading.Lock()
 # CONNECTION INFORMATION
 HOST = 'localhost' # should replace with system IP on GCP later ?
 PORTS = [6265] # have multiple ports available ?
-TIMEOUT_TIME = utils.TIMEOUT_VAL
 
-def chat_timeout():
+def chat_timeout(session, socket1, socket2, machine1, machine2):
     timeout = False
+    print("\ntimeout thread started\n")
+    global online_sessions
     lock.acquire()
-    global TIMEOUT_TIME
-    TIMEOUT_TIME = utils.TIMEOUT_VAL
+    online_sessions[session] = utils.TIMEOUT_VAL
     lock.release()
+
     while True:
-        #print(TIMEOUT_TIME)
+        #print(timeout_time)
         time.sleep(1) # Sleep for 1 second 
-        print("\n", TIMEOUT_TIME, "\n")
         lock.acquire()
-        TIMEOUT_TIME -= 1
-        timeout = True if TIMEOUT_TIME == 0 else False
+        online_sessions[session] -= 1
+        timeout_time = online_sessions[session]
         lock.release()
-        if TIMEOUT_TIME <= 0:
+        timeout = True if timeout_time == 0 else False
+        if timeout_time <= 0:
             print("exiting timeout thread\n")
             break # timeout
-        elif TIMEOUT_TIME == 15:
-            sv.TIMEOUT_WARNING(socket, machine)
+        elif timeout_time == 15:
+            print("\nsending warning to session ", session, "\n")
+            sv.TIMEOUT_WARNING(socket1, machine1)
+            sv.TIMEOUT_WARNING(socket2, machine2)
     # End connection with the other Client
     if timeout:
-        sv.END_NOTIF(socket, machine)
+        sv.END_NOTIF(socket1, machine1)
+        sv.END_NOTIF(socket2, machine2)
 
 if __name__ == '__main__':
     print("server running")
@@ -53,6 +58,7 @@ if __name__ == '__main__':
     connected_pair = []
     message_queues = {}
     online_sessionIDs = []
+    global online_sessions
     online_sessions = {}
     
     query_result = db.user_query()
@@ -148,15 +154,24 @@ if __name__ == '__main__':
                             connection_targetID = message["targetID"]
                             # create sessionID
                             sessionID = utils.gen_sessionID(online_sessionIDs)
+                            lock.acquire()
+                            online_sessions[sessionID] = utils.TIMEOUT_VAL
+                            online_sessionIDs.append(sessionID)
+                            lock.release()
                             # find sockets
                             socket_index = online_clientIDs.index(connection_senderID)
-                            response_socket = inputs[socket_index + 2] # +2 to account for server udp and tcp socket
-                            sv.CHAT_STARTED(response_socket, connection_targetID, sessionID, machine)
+                            sender_socket = inputs[socket_index + 2] # +2 to account for server udp and tcp socket
+                            sv.CHAT_STARTED(sender_socket, connection_targetID, sessionID, machine)
 
                             socket_index = online_clientIDs.index(connection_targetID)
-                            response_socket = inputs[socket_index + 2]
+                            target_socket = inputs[socket_index + 2]
                             target_machine = create_machine(clients[connection_targetID]["password"], clients[connection_targetID]["salt"])
-                            sv.CHAT_STARTED(response_socket, connection_senderID, sessionID, target_machine)
+                            sv.CHAT_STARTED(target_socket, connection_senderID, sessionID, target_machine)
+                            #
+                            # start timer thread
+                            #
+                            timer_thread = threading.Thread(target = chat_timeout, args = (sessionID, sender_socket, target_socket, machine, target_machine))
+                            timer_thread.start()
                         else:
                             connection_senderID = message["senderID"]
                             connection_targetID = message["targetID"]
@@ -239,6 +254,9 @@ if __name__ == '__main__':
                 # reset timeout
                 #
                 print("\nmessage sent - reset timer\n")
+                lock.acquire()
+                online_sessions[sessionID] = utils.TIMEOUT_VAL
+                lock.release()
         for s in exceptional: # handle errors - close socket if error (not used right now)
             print("handleing error")
             inputs.remove(s)
