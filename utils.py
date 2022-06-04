@@ -1,7 +1,7 @@
 import os
 from uuid import uuid4
 
-def messageDict(senderID, message_type, username = None, message_body = None, targetID = None, cookie = None, hashed_password = None, salt = None, port = None):
+def messageDict(senderID, message_type, username = None, message_body = None, targetID = None, cookie = None, salt = None, sessionID = None):
     return { 
     'senderID' : senderID, 
     'message_type' : message_type,
@@ -9,7 +9,7 @@ def messageDict(senderID, message_type, username = None, message_body = None, ta
     'message_body' : message_body,
     'targetID' : targetID,
     'cookie': cookie,
-    'port': port
+    'sessionID': sessionID
     }
 
 def screenClear():
