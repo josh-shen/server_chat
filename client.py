@@ -8,6 +8,7 @@ import client_functions as cl
 connect_type = 0
 reply = None
 targetID = None
+sessionID = None
 
 # client credentials
 ID = "MqoZnhsHI3ZYz3ea6K4q"
@@ -24,14 +25,17 @@ def msg_recv(machine: aes_cipher):
         
         if message["message_type"] == "CHAT_STARTED":
             global targetID
-            if targetID == None:
-                targetID = message["targetID"]
+            targetID = message["targetID"]
+            global sessionID
+            sessionID = message["sessionID"]
             print("\n", message["sessionID"], "\n")
         elif  message["message_type"] == 'CHAT':
-            print("\nchat received\n")
             print("\n", message["sessionID"], "\n")
+        elif message["message_type"] == "UNREACHABLE":
+            targetID = None
         elif message["message_type"] == "END_NOTIF":
             targetID = None
+            sessionID = None
         elif message["message_type"] == "LOG_OFF":
             client_socket.tcp_client.close()
             client_socket.tcp_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -106,14 +110,14 @@ while True:
             targetID = message_input.split()[1]
             client_socket.CHAT_REQUEST(targetID, machine)
         elif message_input == "end chat":
-            client_socket.END_REQUEST(targetID, machine)
+            client_socket.END_REQUEST(targetID, sessionID, machine)
         elif message_input == "logoff":
-            client_socket.LOG_OFF(targetID, machine)
+            client_socket.LOG_OFF(targetID, sessionID, machine)
             connect_type = 0
         elif message_input != "end client":
             if targetID:
                 print('------------')
-                client_socket.CHAT(message_input, targetID, machine)
+                client_socket.CHAT(message_input, targetID, sessionID, machine)
             else:
                 print("not in a chat session")
                 continue
