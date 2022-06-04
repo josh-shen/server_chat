@@ -17,3 +17,11 @@ def screenClear():
         os.system('clear')
     else:
         os.system('cls')
+        
+def gen_sessionID(existing_sessionIDs):
+    while True:
+        i = uuid4().int
+        mask = '0b111111111111111111111111111111111111111111111111111111111111111'
+        i = i & int(mask, 2)
+        if i not in existing_sessionIDs:
+            return i
