@@ -55,3 +55,10 @@ class client_API:
         encMessage = machine.encrypt_message(unencBytes)
         totMessage = self.clientID.encode() + encMessage
         self.tcp_client.send(totMessage)
+        
+    def LOG_OFF(self, targetID, machine):
+        message = messageDict(self.clientID, message_type = "LOG_OFF", targetID = targetID)
+        unencrypted_bytes = pickle.dumps(message)
+        encrypted_bytes = machine.encrypt_message(unencrypted_bytes)
+        message = self.clientID.encode() + encrypted_bytes
+        self.tcp_client.send(message)
