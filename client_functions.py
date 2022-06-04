@@ -15,7 +15,6 @@ class client_API:
         self.client_key = client_key
         self.salt = None
 
-    # UDP SECTION
     def HELLO(self):
         self.udp_client.send(str.encode("HELLO " + str(self.clientID)))
 
