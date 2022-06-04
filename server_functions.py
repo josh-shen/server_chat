@@ -42,3 +42,29 @@ def UNREACHABLE(socket, target_clientID, machine):
     unencrypted_bytes = pickle.dumps(message)
     encrypted_bytes = machine.encrypt_message(unencrypted_bytes)
     socket.send(encrypted_bytes)
+
+def END_NOTIF(socket, machine):
+    body = "session has been terminated"
+    message = messageDict(senderID = "SERVER", message_type = "END_NOTIF", message_body = body)
+    unencrypted_bytes = pickle.dumps(message)
+    encrypted_bytes = machine.encrypt_message(unencrypted_bytes)
+    socket.send(encrypted_bytes)
+
+def TIMEOUT_WARNING(socket, machine):
+    body = "chat is disconnecting in 15 seconds, send or recive a message to reset the timer"
+    message = messageDict(senderID = "SERVER", message_type = "TIMEOUT_WARN", message_body = body)
+    unencrypted_bytes = pickle.dumps(message)
+    encrypted_bytes = machine.encrypt_message(unencrypted_bytes)
+    socket.send(encrypted_bytes)
+
+def LOG_OFF(socket, machine):
+    message = messageDict(senderID = "SERVER", message_type = "LOG_OFF")
+    unencrypted_bytes = pickle.dumps(message)
+    encrypted_bytes = machine.encrypt_message(unencrypted_bytes)
+    socket.send(encrypted_bytes)
+
+def disconnect_message(connectionID, clients, inputs, online_clientIDs):
+    socket_index = online_clientIDs.index(connectionID)
+    response_socket = inputs[socket_index + 2]
+    machine = create_machine(clients[connectionID]["password"], clients[connectionID]["salt"])
+    END_NOTIF(response_socket, machine)
