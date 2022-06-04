@@ -1,6 +1,9 @@
 import os
 from uuid import uuid4
 
+#global constants
+TIMEOUT_VAL = 20
+
 def messageDict(senderID, message_type, username = None, message_body = None, targetID = None, cookie = None, salt = None, sessionID = None):
     return { 
     'senderID' : senderID, 
