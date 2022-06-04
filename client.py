@@ -111,7 +111,11 @@ while True:
             client_socket.LOG_OFF(targetID, machine)
             connect_type = 0
         elif message_input != "end client":
-            print('------------')
-            client_socket.CHAT(message_input, targetID, machine)
+            if targetID:
+                print('------------')
+                client_socket.CHAT(message_input, targetID, machine)
+            else:
+                print("not in a chat session")
+                continue
 
 client_socket.tcp_client.close()
