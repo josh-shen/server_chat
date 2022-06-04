@@ -12,35 +12,37 @@ HOST = 'localhost' # should replace with system IP on GCP later ?
 PORTS = [6265] # have multiple ports available ?
 
 def chat_timeout(session, socket1, socket2, machine1, machine2):
-    timeout = False
     print("\ntimeout thread started\n")
+    timeout = False
     global online_sessions
     lock.acquire()
     online_sessions[session] = utils.TIMEOUT_VAL
     lock.release()
 
     while True:
-        #print(timeout_time)
-        time.sleep(1) # Sleep for 1 second 
+        time.sleep(1) 
         lock.acquire()
         online_sessions[session] -= 1
         timeout_time = online_sessions[session]
         lock.release()
         timeout = True if timeout_time == 0 else False
         if timeout_time <= 0:
-            print("exiting timeout thread\n")
+            print("\nexiting timeout thread\n")
+            lock.acquire()
+            del online_sessions[session]
+            lock.release()
             break # timeout
         elif timeout_time == 15:
             print("\nsending warning to session ", session, "\n")
             sv.TIMEOUT_WARNING(socket1, machine1)
             sv.TIMEOUT_WARNING(socket2, machine2)
-    # End connection with the other Client
+    # end connection with other client
     if timeout:
         sv.END_NOTIF(socket1, machine1)
         sv.END_NOTIF(socket2, machine2)
 
 if __name__ == '__main__':
-    print("server running")
+    print("server running\n")
     # create server UDP socket
     udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     # create server TCP socket
@@ -58,7 +60,6 @@ if __name__ == '__main__':
     connected_pair = []
     message_queues = {}
     online_sessionIDs = []
-    global online_sessions
     online_sessions = {}
     
     query_result = db.user_query()
@@ -154,7 +155,7 @@ if __name__ == '__main__':
                             connection_targetID = message["targetID"]
                             # create sessionID
                             sessionID = utils.gen_sessionID(online_sessionIDs)
-                            lock.acquire()
+                            lock.acquire() 
                             online_sessions[sessionID] = utils.TIMEOUT_VAL
                             online_sessionIDs.append(sessionID)
                             lock.release()
@@ -167,9 +168,7 @@ if __name__ == '__main__':
                             target_socket = inputs[socket_index + 2]
                             target_machine = create_machine(clients[connection_targetID]["password"], clients[connection_targetID]["salt"])
                             sv.CHAT_STARTED(target_socket, connection_senderID, sessionID, target_machine)
-                            #
                             # start timer thread
-                            #
                             timer_thread = threading.Thread(target = chat_timeout, args = (sessionID, sender_socket, target_socket, machine, target_machine))
                             timer_thread.start()
                         else:
@@ -192,10 +191,14 @@ if __name__ == '__main__':
 
                     connection_senderID = message["senderID"]
                     connection_targetID = message["targetID"]
-                    
+                    sessionID = message["sessionID"]
+                    lock.acquire()
+                    online_sessions[sessionID] = 0
+                    lock.release()
                     sv.disconnect_message(connection_senderID, clients, inputs, online_clientIDs)
                     sv.disconnect_message(connection_targetID, clients, inputs, online_clientIDs)
 
+                    online_sessionIDs.remove(sessionID)
                     continue
                 elif message["message_type"] == "LOG_OFF":
                     senderID = message["senderID"]
@@ -207,12 +210,19 @@ if __name__ == '__main__':
                     # connection teardown
                     client_pair = [tupleElem for tupleElem in connected_pair 
                         if tupleElem[0] == message["senderID"] or tupleElem[1] == message["senderID"]]
-                    # end chat session
+                    # if logging off from a chat session, end chat
                     if client_pair:
+                        sessionID = message["sessionID"]
+                        lock.acquire()
+                        online_sessions[sessionID] = 0
+                        print("\nsession ", sessionID, " removed\n")
+                        lock.release()
                         connected_pair.remove(client_pair[0])
+
                         sv.disconnect_message(senderID, clients, inputs, online_clientIDs)
                         sv.disconnect_message(targetID, clients, inputs, online_clientIDs)
 
+                        online_sessionIDs.remove(sessionID)
                     # end TCP connection
                     online_clientIDs.remove(senderID)
                     socket = clients[senderID]["socket"]
@@ -223,7 +233,9 @@ if __name__ == '__main__':
                     continue
                 
                 if message["message_body"]: 
-                    outgoing_message = utils.messageDict(senderID = message["senderID"], targetID = message["targetID"], message_type = "CHAT", message_body = message["message_body"])
+                    outgoing_message = utils.messageDict(
+                        senderID = message["senderID"], targetID = message["targetID"], sessionID = message["sessionID"], message_type = "CHAT", message_body = message["message_body"]
+                    )
                     message_queues[s].put(outgoing_message)
                     if s not in outputs:
                         outputs.append(s)
@@ -234,7 +246,7 @@ if __name__ == '__main__':
                 # no messages waiting 
                 outputs.remove(s)
             else:
-                print ("sending", next_message["message_body"], " to ", next_message["targetID"])
+                print("session ", message["sessionID"], ": sending", next_message["message_body"], " to ", next_message["targetID"])
                 senderID = next_message["senderID"]
                 next_message["username"] = clients[senderID]["username"]
                 client_pair = [tupleElem for tupleElem in connected_pair 
@@ -250,9 +262,7 @@ if __name__ == '__main__':
                 unencrypted_bytes = pickle.dumps(next_message)
                 encrypted_bytes = machine.encrypt_message(unencrypted_bytes)
                 inputs[target + 2].send(encrypted_bytes)
-                #
                 # reset timeout
-                #
                 print("\nmessage sent - reset timer\n")
                 lock.acquire()
                 online_sessions[sessionID] = utils.TIMEOUT_VAL
