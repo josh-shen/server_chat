@@ -15,6 +15,7 @@ class client_API:
         self.client_key = client_key
         self.salt = None
 
+    # UDP SECTION
     def HELLO(self):
         self.udp_client.send(str.encode("HELLO " + str(self.clientID)))
 
@@ -32,31 +33,29 @@ class client_API:
         message = self.clientID.encode() + encrypted_bytes
         self.tcp_client.send(message)
     
-    def CHAT_REQUEST(self, targetID, cookie):
-        message = messageDict(self.clientID, message_type = "CHAT_REQUEST", targetID = targetID, cookie = cookie)
-        machine = create_machine(self.client_key, self.salt)
+    def CHAT_REQUEST(self, targetID, machine):
+        message = messageDict(self.clientID, message_type = "CHAT_REQUEST", targetID = targetID)
         unencrypted_bytes = pickle.dumps(message)
         encrypted_bytes = machine.encrypt_message(unencrypted_bytes)
         message = self.clientID.encode() + encrypted_bytes
         self.tcp_client.send(message)
-      
-    def CHAT(self, body, targetID, cookie, machine):
-        message = messageDict(senderID = self.clientID, message_type = "CHAT", message_body = body, targetID = targetID, cookie = cookie)
+
+    def CHAT(self, body, targetID, sessionID, machine):
+        message = messageDict(senderID = self.clientID, message_type = "CHAT", message_body = body, targetID = targetID, sessionID = sessionID)
         unencrypted_bytes = pickle.dumps(message)
         encrypted_bytes = machine.encrypt_message(unencrypted_bytes)
         message = self.clientID.encode() + encrypted_bytes
         self.tcp_client.send(message)
     
-    def END_REQUEST(self, targetID):
-        endNotifMessage = messageDict(self.clientID, targetID = targetID, message_type = "END_REQUEST")
-        machine = create_machine(self.client_key, self.salt)
-        unencBytes = pickle.dumps(endNotifMessage)
-        encMessage = machine.encrypt_message(unencBytes)
-        totMessage = self.clientID.encode() + encMessage
-        self.tcp_client.send(totMessage)
-        
-    def LOG_OFF(self, targetID, machine):
-        message = messageDict(self.clientID, message_type = "LOG_OFF", targetID = targetID)
+    def END_REQUEST(self, targetID, sessionID, machine):
+        message = messageDict(self.clientID, targetID = targetID, sessionID = sessionID, message_type = "END_REQUEST")
+        unencrypted_bytes = pickle.dumps(message)
+        encrypted_bytes = machine.encrypt_message(unencrypted_bytes)
+        message = self.clientID.encode() + encrypted_bytes
+        self.tcp_client.send(message)
+    
+    def LOG_OFF(self, targetID, sessionID, machine):
+        message = messageDict(self.clientID, message_type = "LOG_OFF", targetID = targetID, sessionID = sessionID)
         unencrypted_bytes = pickle.dumps(message)
         encrypted_bytes = machine.encrypt_message(unencrypted_bytes)
         message = self.clientID.encode() + encrypted_bytes
