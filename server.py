@@ -8,8 +8,9 @@ import utils
 
 lock = threading.Lock()
 # CONNECTION INFORMATION
-HOST = 'localhost' # should replace with system IP on GCP later ?
-PORTS = [6265] # have multiple ports available ?
+INTERNAL_HOST = "localhost" # internal GCP VM IP address
+EXTERNAL_HOST = "localhost" # external GCP VM IP address
+PORTS = [3389] # have multiple ports available ?
 
 def chat_timeout(session, socket1, socket2, machine1, machine2):
     print("\ntimeout thread started\n")
@@ -71,14 +72,14 @@ if __name__ == '__main__':
     PORT = secrets.choice(PORTS) # different ports for UDP and TCP?
     # bind UDP socket 
     try:
-        udp_socket.bind(('localhost', PORT))
+        udp_socket.bind((INTERNAL_HOST, PORT))
     except socket.error as e:
         print(str(e))
         utils.screenClear()
         exit()
     # bind TCP socket
     try:
-        tcp_socket.bind(('localhost', PORT))
+        tcp_socket.bind((INTERNAL_HOST, PORT))
     except socket.error as e:
         print(str(e))
         utils.screenClear()
@@ -111,7 +112,7 @@ if __name__ == '__main__':
                         cookie = clients[clientID]["cookie"] = token_urlsafe(16)
                         password = clients[clientID]["password"]
                         salt = clients[clientID]["salt"]
-                        sv.AUTH_SUCCESS(udp_socket, addr, cookie, password, salt, PORT, HOST)
+                        sv.AUTH_SUCCESS(udp_socket, addr, cookie, password, salt, PORT, EXTERNAL_HOST)
                     else:
                         sv.AUTH_FAIL(udp_socket, addr)
             # TCP SECTION
@@ -199,6 +200,7 @@ if __name__ == '__main__':
                     sv.disconnect_message(connection_targetID, clients, inputs, online_clientIDs)
 
                     online_sessionIDs.remove(sessionID)
+                    print("\nsession ", sessionID, " removed\n")
                     continue
                 elif message["message_type"] == "LOG_OFF":
                     senderID = message["senderID"]
