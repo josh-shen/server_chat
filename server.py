@@ -63,11 +63,15 @@ if __name__ == '__main__':
     online_sessionIDs = []
     online_sessions = {}
     
-    query_result = db.user_query()
-    for doc in query_result:
-        user_dict = doc.to_dict()
-        user = {"username": user_dict["username"], "password": user_dict["password"], "salt": None, "salted_password": None, "port": None, "cookie": None, "socket": None} 
-        clients[doc.id] = user
+    #user database query
+    database = db.get_database()
+
+    users = database["users"]
+    item_details = users.find()
+
+    for item in item_details:
+        user = {"username": item["username"], "password": item["password"], "salt": None, "salted_password": None, "port": None, "cookie": None, "socket": None}
+        clients[str(item["_id"])] = user    
 
     PORT = secrets.choice(PORTS) # different ports for UDP and TCP?
     # bind UDP socket 
@@ -125,11 +129,11 @@ if __name__ == '__main__':
                 message_queues[connection] = queue.Queue()
             else:
                 id_encrypted_bytes = s.recv(65536) # 2^16 bytes
-                if len(id_encrypted_bytes) < 20:
+                if len(id_encrypted_bytes) < 24:
                     # invalid message
                     continue
-                id = id_encrypted_bytes[:20].decode("utf-8")
-                encrypted_bytes = id_encrypted_bytes[20:]
+                id = id_encrypted_bytes[:24].decode("utf-8")
+                encrypted_bytes = id_encrypted_bytes[24:]
                 machine = create_machine(clients[id]["password"], clients[id]["salt"])
                 decrypted_bytes = machine.decrypt_message(encrypted_bytes)
                 message = pickle.loads(decrypted_bytes)
