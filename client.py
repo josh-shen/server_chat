@@ -31,6 +31,8 @@ def msg_recv(machine: aes_cipher):
 
             global sessionID 
             sessionID = message["sessionID"] 
+        elif message["message_type"] == "UNREACHABLE":
+            targetID = None
         elif message["message_type"] == "END_NOTIF":
             targetID = None
         elif message["message_type"] == "LOG_OFF":
