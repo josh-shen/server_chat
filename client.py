@@ -18,24 +18,21 @@ PASSWORD = "password"
 def msg_recv(machine: aes_cipher):
     while True:
         encrypted_bytes = client_socket.tcp_client.recv(65536)
+
         if len(encrypted_bytes) == 0:
             break
+
         decrypted_bytes = machine.decrypt_message(encrypted_bytes)
         message = pickle.loads(decrypted_bytes)
-        
         if message["message_type"] == "CHAT_STARTED":
             global targetID
-            targetID = message["targetID"]
-            global sessionID
-            sessionID = message["sessionID"]
-            print("\n", message["sessionID"], "\n")
-        elif  message["message_type"] == 'CHAT':
-            print("\n", message["sessionID"], "\n")
-        elif message["message_type"] == "UNREACHABLE":
-            targetID = None
+            if targetID == None:
+                targetID = message["targetID"]
+
+            global sessionID 
+            sessionID = message["sessionID"] 
         elif message["message_type"] == "END_NOTIF":
             targetID = None
-            sessionID = None
         elif message["message_type"] == "LOG_OFF":
             client_socket.tcp_client.close()
             client_socket.tcp_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -45,7 +42,6 @@ def msg_recv(machine: aes_cipher):
         
         identifier = message["username"] if message["senderID"] != "SERVER" else message["senderID"]
         recv_message = "> " + identifier + ": " + (message["message_body"] if message["message_body"] is not None else "None")
-        sys.stdout.write("\r" + '------------\n')
         print(recv_message)
         sys.stdout.flush()
 
@@ -55,7 +51,9 @@ while True:
     if connect_type == 0:
         print("type 'logon' to start connection  or 'exit' to shut the app")
         ins = input()
-        print(ins)
+
+        print ("\033[A                             \033[A") #clear input line
+
         if ins == "logon":
             connect_type = 1
         elif ins == "exit":
@@ -98,6 +96,7 @@ while True:
                     cookie = reply[3]
                 else:
                     reply = reply.decode('utf-8').split() 
+
                 print("received from server: ", reply)
         except socket.timeout:
             reply = None
@@ -105,6 +104,8 @@ while True:
             break
     else:
         message_input = input("")
+        print ("\033[A                             \033[A") #clear input line
+        print(">", message_input)
 
         if message_input.split()[0] == "chat":
             targetID = message_input.split()[1]
@@ -115,11 +116,6 @@ while True:
             client_socket.LOG_OFF(targetID, sessionID, machine)
             connect_type = 0
         elif message_input != "end client":
-            if targetID:
-                print('------------')
-                client_socket.CHAT(message_input, targetID, sessionID, machine)
-            else:
-                print("not in a chat session")
-                continue
+            client_socket.CHAT(message_input, targetID, sessionID, machine)
 
 client_socket.tcp_client.close()

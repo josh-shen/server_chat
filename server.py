@@ -12,9 +12,10 @@ INTERNAL_HOST = "localhost" # internal GCP VM IP address
 EXTERNAL_HOST = "localhost" # external GCP VM IP address
 PORTS = [3389] # have multiple ports available ?
 
-def chat_timeout(session, socket1, socket2, machine1, machine2):
+def chat_timeout(session, connected_pair, client, socket1, socket2, machine1, machine2):
     print("\ntimeout thread started\n")
     timeout = False
+
     global online_sessions
     lock.acquire()
     online_sessions[session] = utils.TIMEOUT_VAL
@@ -22,15 +23,18 @@ def chat_timeout(session, socket1, socket2, machine1, machine2):
 
     while True:
         time.sleep(1) 
+
         lock.acquire()
         online_sessions[session] -= 1
         timeout_time = online_sessions[session]
         lock.release()
+
         timeout = True if timeout_time == 0 else False
+
         if timeout_time <= 0:
-            print("\nexiting timeout thread\n")
+            print("exiting timeout thread\n")
             lock.acquire()
-            del online_sessions[session]
+            online_sessions[session] = 0
             lock.release()
             break # timeout
         elif timeout_time == 15:
@@ -39,6 +43,14 @@ def chat_timeout(session, socket1, socket2, machine1, machine2):
             sv.TIMEOUT_WARNING(socket2, machine2)
     # end connection with other client
     if timeout:
+        #remove client pair
+        client_pair = [tuple_elem for tuple_elem in connected_pair 
+            if tuple_elem[0] == client or tuple_elem[1] == client]
+        if client_pair:
+            connected_pair.remove(client_pair[0])
+        #remove session
+        online_sessionIDs.remove(sessionID)
+
         sv.END_NOTIF(socket1, machine1)
         sv.END_NOTIF(socket2, machine2)
 
@@ -76,14 +88,14 @@ if __name__ == '__main__':
     PORT = secrets.choice(PORTS) # different ports for UDP and TCP?
     # bind UDP socket 
     try:
-        udp_socket.bind((INTERNAL_HOST, PORT))
+        udp_socket.bind((HOST, PORT))
     except socket.error as e:
         print(str(e))
         utils.screenClear()
         exit()
     # bind TCP socket
     try:
-        tcp_socket.bind((INTERNAL_HOST, PORT))
+        tcp_socket.bind((HOST, PORT))
     except socket.error as e:
         print(str(e))
         utils.screenClear()
@@ -100,6 +112,7 @@ if __name__ == '__main__':
                 data, addr = udp_socket.recvfrom(2048)
                 data = data.decode("utf-8").split()
                 print("received: ", data)
+
                 if data[0] == "HELLO":
                     clientID = data[1]
                     address_to_ID[addr] = clientID
@@ -108,6 +121,7 @@ if __name__ == '__main__':
                     salt = clients[clientID]["salt"] = bcrypt.gensalt()
                     clients[clientID]["salted_password"] = bcrypt.hashpw(str(password).encode(), salt)
                     sv.CHALLENGE(udp_socket, addr, clientID, salt)
+
                 if data[0] == "RESPONSE":
                     salted_password = data[1]
                     clientID = address_to_ID[addr]
@@ -116,7 +130,7 @@ if __name__ == '__main__':
                         cookie = clients[clientID]["cookie"] = token_urlsafe(16)
                         password = clients[clientID]["password"]
                         salt = clients[clientID]["salt"]
-                        sv.AUTH_SUCCESS(udp_socket, addr, cookie, password, salt, PORT, EXTERNAL_HOST)
+                        sv.AUTH_SUCCESS(udp_socket, addr, cookie, password, salt, PORT, HOST)
                     else:
                         sv.AUTH_FAIL(udp_socket, addr)
             # TCP SECTION
@@ -150,10 +164,10 @@ if __name__ == '__main__':
                     # check if target ID is online
                     online = message["targetID"] in online_clientIDs
                     if (online):
-                        # check if target is already in a chat - TODO check if targetID is not same as senderID, TODO check if already paired with targetID
+                        # check if target is already in a chat, check if targetID is not same as senderID
                         paired = [tuple_elem for tuple_elem in connected_pair
                             if tuple_elem[0] == message["targetID"] or tuple_elem[1] == message["targetID"]]
-                        if not paired:
+                        if not paired and message["senderID"] != message["targetID"]:
                             # add clients to connected pair
                             connected_pair.append(tuple((message["senderID"], message["targetID"])))
                             connection_senderID = message["senderID"]
@@ -174,7 +188,7 @@ if __name__ == '__main__':
                             target_machine = create_machine(clients[connection_targetID]["password"], clients[connection_targetID]["salt"])
                             sv.CHAT_STARTED(target_socket, connection_senderID, sessionID, target_machine)
                             # start timer thread
-                            timer_thread = threading.Thread(target = chat_timeout, args = (sessionID, sender_socket, target_socket, machine, target_machine))
+                            timer_thread = threading.Thread(target = chat_timeout, args = (sessionID, connected_pair, connection_senderID, sender_socket, target_socket, machine, target_machine))
                             timer_thread.start()
                         else:
                             connection_senderID = message["senderID"]
@@ -221,7 +235,6 @@ if __name__ == '__main__':
                         sessionID = message["sessionID"]
                         lock.acquire()
                         online_sessions[sessionID] = 0
-                        print("\nsession ", sessionID, " removed\n")
                         lock.release()
                         connected_pair.remove(client_pair[0])
 
@@ -229,6 +242,7 @@ if __name__ == '__main__':
                         sv.disconnect_message(targetID, clients, inputs, online_clientIDs)
 
                         online_sessionIDs.remove(sessionID)
+                        print("\nsession ", sessionID, " removed\n")
                     # end TCP connection
                     online_clientIDs.remove(senderID)
                     socket = clients[senderID]["socket"]
@@ -253,6 +267,7 @@ if __name__ == '__main__':
                 outputs.remove(s)
             else:
                 print("session ", message["sessionID"], ": sending", next_message["message_body"], " to ", next_message["targetID"])
+                print(message)
                 senderID = next_message["senderID"]
                 next_message["username"] = clients[senderID]["username"]
                 client_pair = [tupleElem for tupleElem in connected_pair 
