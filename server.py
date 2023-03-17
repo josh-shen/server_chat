@@ -49,7 +49,7 @@ def chat_timeout(session, connected_pair, client, socket1, socket2, machine1, ma
         if client_pair:
             connected_pair.remove(client_pair[0])
         #remove session
-        online_sessionIDs.remove(sessionID)
+        online_sessionIDs.remove(session)
 
         sv.END_NOTIF(socket1, machine1)
         sv.END_NOTIF(socket2, machine2)
