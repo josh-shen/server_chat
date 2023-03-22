@@ -7,9 +7,6 @@ All required modules are listed in the requirements.txt file. All modules can be
 `$ pip install -r requirements.txt`  
 or     
 `$ pip3 install -r requirements.txt`  
-  
-#### Firestore
-Use the following [guide](https://cloud.google.com/firestore/docs/create-database-server-client-library) to set up Firestore. Firestore is used to store user usernames, keys, and IDs.
 
 ## Usage
 ### Run commands
