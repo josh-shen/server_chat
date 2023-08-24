@@ -1,15 +1,15 @@
 import bcrypt, pickle, socket
 
-from utils import messageDict
+from utils import messageDict, SERVER_ADDRESS
 from aes import create_machine
 
-HOST = "" # GCP VM external address
-PORT = 3389
+UDP_address = SERVER_ADDRESS
+UDP_port = 3389
 
 class client_API:
     def __init__(self, clientID, client_key):
         self.udp_client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.udp_client.connect((HOST, PORT))
+        self.udp_client.connect((UDP_address, UDP_port))
         self.tcp_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.clientID = clientID
         self.client_key = client_key
