@@ -3,6 +3,8 @@ from uuid import uuid4
 
 #global constants
 TIMEOUT_VAL = 20
+PRIVATE_ADDRESS = 'localhost'   # server internal IP address, use 'localhost' for testing
+SERVER_ADDRESS = 'localhost' # server external IP address, use 'localhost' for testing
 
 def messageDict(senderID, message_type, username = None, message_body = None, targetID = None, cookie = None, salt = None, sessionID = None):
     return { 
