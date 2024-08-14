@@ -11,8 +11,8 @@ targetID = None
 sessionID = None
 
 # client credentials
-ID = "MqoZnhsHI3ZYz3ea6K4q"
-PASSWORD = "password"
+USERNAME = ""
+PASSWORD = ""
 
 # message receive thread
 def msg_recv(machine: aes_cipher):
@@ -47,7 +47,7 @@ def msg_recv(machine: aes_cipher):
         print(recv_message)
         sys.stdout.flush()
 
-client_socket = cl.client_API(ID, PASSWORD)
+client_socket = cl.client_API(USERNAME, PASSWORD)
 
 while True:
     if connect_type == 0:
@@ -72,6 +72,7 @@ while True:
                 client_socket.RESPONSE(PASSWORD, salt.encode())
             elif reply != [] and reply[0] == "AUTH_SUCCESS":
                 connect_type = 2
+                client_socket.clientID = ID
                 # begin TCP connection
                 client_socket.tcp_client.connect((HOST, int(PORT)))
                 client_socket.CONNECT(cookie, machine)
@@ -93,9 +94,10 @@ while True:
                     machine = create_machine(PASSWORD, client_socket.salt)
                     reply = machine.decrypt_message(reply[2:])
                     reply = reply.decode('utf-8').split()
-                    PORT = reply[1]
-                    HOST = reply[2]
-                    cookie = reply[3]
+                    ID = reply[1]
+                    PORT = reply[2]
+                    HOST = reply[3]
+                    cookie = reply[4]
                 else:
                     reply = reply.decode('utf-8').split() 
 

@@ -115,7 +115,11 @@ if __name__ == '__main__':
                 print("received: ", data)
 
                 if data[0] == "HELLO":
-                    clientID = data[1]
+                    client_username = data[1]
+                    # get client ID from username
+                    for n in clients:
+                        if clients[n]["username"] == client_username:
+                            clientID = n
                     address_to_ID[addr] = clientID
                     # start auth challenge for client
                     password = clients[clientID]["password"]
@@ -131,7 +135,7 @@ if __name__ == '__main__':
                         cookie = clients[clientID]["cookie"] = token_urlsafe(16)
                         password = clients[clientID]["password"]
                         salt = clients[clientID]["salt"]
-                        sv.AUTH_SUCCESS(udp_socket, addr, cookie, password, salt, PORT, EXTERNAL_HOST)
+                        sv.AUTH_SUCCESS(udp_socket, addr, clientID, cookie, password, salt, PORT, EXTERNAL_HOST)
                     else:
                         sv.AUTH_FAIL(udp_socket, addr)
             # TCP SECTION

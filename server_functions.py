@@ -9,8 +9,8 @@ def CHALLENGE(socket, addr, clientID, rand):
     message = resp.encode() + rand
     socket.sendto(message, addr)
 
-def AUTH_SUCCESS(socket, addr, cookie, password, salt, port, host):
-    resp = "AUTH_SUCCESS " + str(port) + " " + str(host) + " " + cookie
+def AUTH_SUCCESS(socket, addr, clientID, cookie, password, salt, port, host):
+    resp = "AUTH_SUCCESS " + str(clientID) + " " + str(port) + " " + str(host) + " " + cookie
     machine = create_machine(password, salt)
     encrypted_message = machine.encrypt_message(resp)
     auth_type = 'as '.encode()
