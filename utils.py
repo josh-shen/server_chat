@@ -2,17 +2,18 @@ import os
 from uuid import uuid4
 
 #global constants
-TIMEOUT_VAL = 20
+TIMEOUT_VAL = 60
 PRIVATE_ADDRESS = 'localhost'   # server internal IP address, use 'localhost' for testing
 SERVER_ADDRESS = 'localhost' # server external IP address, use 'localhost' for testing
 
-def messageDict(senderID, message_type, username = None, message_body = None, targetID = None, cookie = None, salt = None, sessionID = None):
+def messageDict(message_type, senderID, username=None, message_body=None, targetID=None, target_username=None, cookie=None, salt=None, sessionID=None):
     return { 
-    'senderID' : senderID, 
-    'message_type' : message_type,
+    'message_type': message_type,
+    'senderID': senderID,
     'username': username,
-    'message_body' : message_body,
-    'targetID' : targetID,
+    'message_body': message_body,
+    'targetID': targetID,
+    'target_username': target_username,
     'cookie': cookie,
     'sessionID': sessionID
     }
@@ -30,3 +31,10 @@ def gen_sessionID(existing_sessionIDs):
         i = i & int(mask, 2)
         if i not in existing_sessionIDs:
             return i
+
+def username_to_ID(db, username):
+    for n in db:
+        if db[n]["username"] == username:
+            return n
+    
+    return None # TODO error handling when this function returns None

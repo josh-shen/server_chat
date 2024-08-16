@@ -28,35 +28,35 @@ class client_API:
     
     # TCP SECTION
     def CONNECT(self, cookie, machine):
-        message = messageDict(senderID=self.clientID, message_type="CONNECT", username=self.client_username, cookie=cookie)
+        message = messageDict(message_type="CONNECT", senderID=self.clientID, username=self.client_username, cookie=cookie)
         unencrypted_bytes = pickle.dumps(message)
         encrypted_bytes = machine.encrypt_message(unencrypted_bytes)
         message = self.clientID.encode() + encrypted_bytes
         self.tcp_client.send(message)
     
-    def CHAT_REQUEST(self, targetID, machine):
-        message = messageDict(senderID=self.clientID, message_type="CHAT_REQUEST", targetID=targetID)
+    def CHAT_REQUEST(self, target_username, machine):
+        message = messageDict(message_type="CHAT_REQUEST", senderID=self.clientID, username=self.client_username, target_username=target_username)
         unencrypted_bytes = pickle.dumps(message)
         encrypted_bytes = machine.encrypt_message(unencrypted_bytes)
         message = self.clientID.encode() + encrypted_bytes
         self.tcp_client.send(message)
 
-    def CHAT(self, body, targetID, sessionID, machine):
-        message = messageDict(senderID=self.clientID, message_type="CHAT", message_body=body, targetID=targetID, sessionID=sessionID)
+    def CHAT(self, body, target_username, sessionID, machine):
+        message = messageDict(message_type="CHAT", senderID=self.clientID, username=self.client_username, message_body=body, target_username=target_username, sessionID=sessionID)
         unencrypted_bytes = pickle.dumps(message)
         encrypted_bytes = machine.encrypt_message(unencrypted_bytes)
         message = self.clientID.encode() + encrypted_bytes
         self.tcp_client.send(message)
     
-    def END_REQUEST(self, targetID, sessionID, machine):
-        message = messageDict(senderID=self.clientID, message_type="END_REQUEST", targetID=targetID, sessionID=sessionID)
+    def END_REQUEST(self, target_username, sessionID, machine):
+        message = messageDict(message_type="END_REQUEST", senderID=self.clientID, username=self.client_username, target_username=target_username, sessionID=sessionID)
         unencrypted_bytes = pickle.dumps(message)
         encrypted_bytes = machine.encrypt_message(unencrypted_bytes)
         message = self.clientID.encode() + encrypted_bytes
         self.tcp_client.send(message)
     
-    def LOG_OFF(self, targetID, sessionID, machine):
-        message = messageDict(senderID=self.clientID, message_type="LOG_OFF", targetID=targetID, sessionID=sessionID)
+    def LOG_OFF(self, target_username, sessionID, machine):
+        message = messageDict(message_type="LOG_OFF", senderID=self.clientID, username=self.client_username, target_username=target_username, sessionID=sessionID)
         unencrypted_bytes = pickle.dumps(message)
         encrypted_bytes = machine.encrypt_message(unencrypted_bytes)
         message = self.clientID.encode() + encrypted_bytes

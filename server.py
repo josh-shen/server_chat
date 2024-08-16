@@ -166,17 +166,19 @@ if __name__ == '__main__':
                         clients[connected_clientID]["socket"] = s
                     continue
                 elif message["message_type"] == "CHAT_REQUEST":
+                    # get ID from username
+                    ID = utils.username_to_ID(clients, message["target_username"])
                     # check if target ID is online
-                    online = message["targetID"] in online_clientIDs
+                    online = ID in online_clientIDs
                     if (online):
                         # check if target is already in a chat, check if targetID is not same as senderID
                         paired = [tuple_elem for tuple_elem in connected_pair
-                            if tuple_elem[0] == message["targetID"] or tuple_elem[1] == message["targetID"]]
-                        if not paired and message["senderID"] != message["targetID"]:
+                            if tuple_elem[0] == ID or tuple_elem[1] == ID]
+                        if not paired and message["senderID"] != ID:
                             # add clients to connected pair
-                            connected_pair.append(tuple((message["senderID"], message["targetID"])))
+                            connected_pair.append(tuple((message["senderID"], ID)))
                             connection_senderID = message["senderID"]
-                            connection_targetID = message["targetID"]
+                            connection_targetID = ID
                             # create sessionID
                             sessionID = utils.gen_sessionID(online_sessionIDs)
                             lock.acquire() 
@@ -186,24 +188,24 @@ if __name__ == '__main__':
                             # find sockets
                             socket_index = online_clientIDs.index(connection_senderID)
                             sender_socket = inputs[socket_index + 2] # +2 to account for server udp and tcp socket
-                            sv.CHAT_STARTED(sender_socket, connection_targetID, sessionID, machine)
+                            sv.CHAT_STARTED(sender_socket, message["target_username"], sessionID, machine)
 
                             socket_index = online_clientIDs.index(connection_targetID)
                             target_socket = inputs[socket_index + 2]
                             target_machine = create_machine(clients[connection_targetID]["password"], clients[connection_targetID]["salt"])
-                            sv.CHAT_STARTED(target_socket, connection_senderID, sessionID, target_machine)
+                            sv.CHAT_STARTED(target_socket, message["username"], sessionID, target_machine)
                             # start timer thread
                             timer_thread = threading.Thread(target = chat_timeout, args = (sessionID, online_sessionIDs, connected_pair, connection_senderID, sender_socket, target_socket, machine, target_machine))
                             timer_thread.start()
                         else:
                             connection_senderID = message["senderID"]
-                            connection_targetID = message["targetID"]
+                            connection_targetID = ID
                             socket_index = online_clientIDs.index(connection_senderID)
                             response_socket = inputs[socket_index + 2]
                             sv.UNREACHABLE(response_socket, connection_targetID, machine)
                     else:
                         connection_senderID = message["senderID"]
-                        connection_targetID = message["targetID"]
+                        connection_targetID = ID
                         socket_index = online_clientIDs.index(connection_senderID)
                         response_socket = inputs[socket_index + 2]
                         sv.UNREACHABLE(response_socket, connection_targetID, machine)
@@ -214,7 +216,7 @@ if __name__ == '__main__':
                         connected_pair.remove(client_pair[0])
 
                     connection_senderID = message["senderID"]
-                    connection_targetID = message["targetID"]
+                    connection_targetID = message["target_username"]
                     sessionID = message["sessionID"]
                     lock.acquire()
                     online_sessions[sessionID] = 0
@@ -227,7 +229,7 @@ if __name__ == '__main__':
                     continue
                 elif message["message_type"] == "LOG_OFF":
                     senderID = message["senderID"]
-                    targetID = message["targetID"]
+                    targetID = message["target_username"]
                     socket_index = online_clientIDs.index(senderID)
                     response_socket = inputs[socket_index + 2]
                     sv.LOG_OFF(response_socket, machine)
@@ -256,10 +258,12 @@ if __name__ == '__main__':
                     if socket in outputs:
                         outputs.remove(socket)
                     continue
-                
+                # message type = CHAT
                 if message["message_body"]: 
+                    # get ID from username
+                    ID = utils.username_to_ID(clients, message["target_username"])
                     outgoing_message = utils.messageDict(
-                        senderID = message["senderID"], targetID = message["targetID"], sessionID = message["sessionID"], message_type = "CHAT", message_body = message["message_body"]
+                        senderID=message["senderID"], targetID=ID, target_username=message["target_username"], sessionID=message["sessionID"], message_type="CHAT", message_body=message["message_body"]
                     )
                     message_queues[s].put(outgoing_message)
                     if s not in outputs:
@@ -271,8 +275,7 @@ if __name__ == '__main__':
                 # no messages waiting 
                 outputs.remove(s)
             else:
-                print("session ", message["sessionID"], ": sending", next_message["message_body"], " to ", next_message["targetID"])
-                print(message)
+                print("session ", message["sessionID"], ": sending", next_message["message_body"], " to ", next_message["target_username"])
                 senderID = next_message["senderID"]
                 next_message["username"] = clients[senderID]["username"]
                 client_pair = [tupleElem for tupleElem in connected_pair 

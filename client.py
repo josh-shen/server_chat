@@ -7,7 +7,7 @@ import client_functions as cl
 # CONNECTION VARIABLES
 connect_type = 0
 reply = None
-targetID = None
+target_username = None
 sessionID = None
 
 # client credentials
@@ -25,16 +25,17 @@ def msg_recv(machine: aes_cipher):
         decrypted_bytes = machine.decrypt_message(encrypted_bytes)
         message = pickle.loads(decrypted_bytes)
         if message["message_type"] == "CHAT_STARTED":
-            global targetID
-            if targetID == None:
-                targetID = message["targetID"]
-
+            print("chat started", message["target_username"])
+            global target_username
+            if target_username == None:
+                target_username = message["target_username"]
+            
             global sessionID 
             sessionID = message["sessionID"] 
         elif message["message_type"] == "UNREACHABLE":
-            targetID = None
+            target_username = None
         elif message["message_type"] == "END_NOTIF":
-            targetID = None
+            target_username = None
         elif message["message_type"] == "LOG_OFF":
             client_socket.tcp_client.close()
             client_socket.tcp_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -72,6 +73,7 @@ while True:
                 client_socket.RESPONSE(PASSWORD, salt.encode())
             elif reply != [] and reply[0] == "AUTH_SUCCESS":
                 connect_type = 2
+                # set ID received from the server
                 client_socket.clientID = ID
                 # begin TCP connection
                 client_socket.tcp_client.connect((HOST, int(PORT)))
@@ -112,14 +114,14 @@ while True:
         print(">", message_input)
 
         if message_input.split()[0] == "chat":
-            targetID = message_input.split()[1]
-            client_socket.CHAT_REQUEST(targetID, machine)
+            target_username = message_input.split()[1]
+            client_socket.CHAT_REQUEST(target_username, machine)
         elif message_input == "end chat":
-            client_socket.END_REQUEST(targetID, sessionID, machine)
+            client_socket.END_REQUEST(target_username, sessionID, machine)
         elif message_input == "logoff":
-            client_socket.LOG_OFF(targetID, sessionID, machine)
+            client_socket.LOG_OFF(target_username, sessionID, machine)
             connect_type = 0
         elif message_input != "end client":
-            client_socket.CHAT(message_input, targetID, sessionID, machine)
+            client_socket.CHAT(message_input, target_username, sessionID, machine)
 
 client_socket.tcp_client.close()
