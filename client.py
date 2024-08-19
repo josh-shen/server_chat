@@ -4,17 +4,17 @@ from aes import aes_cipher, create_machine
 import utils
 import client_functions as cl
 
-# CONNECTION VARIABLES
+# connection variables
 connect_type = 0
 reply = None
 target_username = None
 sessionID = None
 
 # client credentials
-USERNAME = ""
-PASSWORD = ""
+USERNAME = "user1"
+PASSWORD = "test"
 
-# message receive thread
+# message receive thread (from either server or another client)
 def msg_recv(machine: aes_cipher):
     while True:
         encrypted_bytes = client_socket.tcp_client.recv(65536)
@@ -24,7 +24,9 @@ def msg_recv(machine: aes_cipher):
 
         decrypted_bytes = machine.decrypt_message(encrypted_bytes)
         message = pickle.loads(decrypted_bytes)
+
         if message["message_type"] == "CHAT_STARTED":
+            # chat started with target client, set target username and session ID
             global target_username
             if target_username == None:
                 target_username = message["target_username"]
@@ -34,15 +36,21 @@ def msg_recv(machine: aes_cipher):
         elif message["message_type"] == "UNREACHABLE":
             target_username = None
         elif message["message_type"] == "END_NOTIF":
+            # chat session closed, clear target username and session ID
             target_username = None
             sessionID = None
         elif message["message_type"] == "LOG_OFF":
+            # clear target username and session ID if still in a chat session
+            target_username = None
+            sessionID = None
+            # close sockets and exit thread
             client_socket.tcp_client.close()
             client_socket.tcp_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             time.sleep(1)
             sys.exit()
             break
         
+        # display received message
         identifier = message["username"] if message["senderID"] != "SERVER" else message["senderID"]
         recv_message = "> " + identifier + ": " + (message["message_body"] if message["message_body"] is not None else "None")
         print(recv_message)
@@ -51,11 +59,12 @@ def msg_recv(machine: aes_cipher):
 client_socket = cl.client_API(USERNAME, PASSWORD)
 
 while True:
-    if connect_type == 0:
+    # connect type 0 - not connected to server
+    if connect_type == 0: 
         print("type 'logon' to start connection  or 'exit' to shut the app")
         ins = input()
 
-        print ("\033[A                             \033[A") #clear input line
+        print ("\033[A                             \033[A") # clear input line
 
         if ins == "logon":
             connect_type = 1
@@ -64,34 +73,39 @@ while True:
             exit()
         else:
             print("invalid input")
-    elif connect_type == 1:
+    # connect type 1 - authenticating with server
+    elif connect_type == 1: 
         try:
             if reply == None:
+                # start authentication process with server
                 client_socket.HELLO() 
             elif reply != [] and reply[0] == "CHALLENGE":
+                # challenge received from server, send response
                 salt = reply[1]
                 client_socket.RESPONSE(PASSWORD, salt.encode())
             elif reply != [] and reply[0] == "AUTH_SUCCESS":
+                # authentication successful, start TCP connection with server
                 connect_type = 2
                 # set ID received from the server
                 client_socket.clientID = ID
-                # begin TCP connection
+                # begin TCP connection, and start message receive thread
                 client_socket.tcp_client.connect((HOST, int(PORT)))
                 client_socket.CONNECT(cookie, machine)
-                print("sent tcp connect message")
+                print("Authentication successful. Sending TCP connect message")
                 recv_thread = threading.Thread(target = msg_recv, args = (machine,))
                 recv_thread.start()
             elif reply != [] and reply[0] == "AUTH_FAIL":
                 reply = None
                 client_socket.udp_client.close()
-                print("authentication failed")
+                print("Authentication failed")
                 break
-
+            
+            # wait for response from server
             if connect_type == 1:
                 client_socket.udp_client.settimeout(5)
                 reply = client_socket.udp_client.recv(1024)
-                # authentication
                 bytes_check = reply[:2]
+
                 if bytes_check == b'as':
                     machine = create_machine(PASSWORD, client_socket.salt)
                     reply = machine.decrypt_message(reply[2:])
@@ -108,22 +122,30 @@ while True:
             reply = None
             print("time out")
             break
-    else:
+    # connect type 2 - connected to server
+    elif connect_type == 2:
         message_input = input("")
         print ("\033[A                             \033[A") #clear input line
         print(">", message_input)
 
         if message_input.split()[0] == "chat":
+            # send chat request with target client to server
             target_username = message_input.split()[1]
             client_socket.CHAT_REQUEST(target_username, machine)
-        elif message_input == "end chat":
+        elif target_username != None and sessionID != None and message_input == "end chat":
+            # send chat end request with target client to server
             client_socket.END_REQUEST(target_username, sessionID, machine)
         elif message_input == "logoff":
+            # send logoff request to server
             client_socket.LOG_OFF(target_username, sessionID, machine)
             connect_type = 0
         elif target_username != None and sessionID != None and message_input != "end client":
+            # send chat message 
             client_socket.CHAT(message_input, target_username, sessionID, machine)
         else:
             print("Invalid input. If you are trying to send a message, you are not currently connected to a chat session.")
+    # connect type not 0, 1, or 2 (this should never happen)
+    else:
+        break
 
 client_socket.tcp_client.close()
