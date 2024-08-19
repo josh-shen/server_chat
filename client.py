@@ -25,7 +25,6 @@ def msg_recv(machine: aes_cipher):
         decrypted_bytes = machine.decrypt_message(encrypted_bytes)
         message = pickle.loads(decrypted_bytes)
         if message["message_type"] == "CHAT_STARTED":
-            print("chat started", message["target_username"])
             global target_username
             if target_username == None:
                 target_username = message["target_username"]
@@ -36,6 +35,7 @@ def msg_recv(machine: aes_cipher):
             target_username = None
         elif message["message_type"] == "END_NOTIF":
             target_username = None
+            sessionID = None
         elif message["message_type"] == "LOG_OFF":
             client_socket.tcp_client.close()
             client_socket.tcp_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -121,7 +121,9 @@ while True:
         elif message_input == "logoff":
             client_socket.LOG_OFF(target_username, sessionID, machine)
             connect_type = 0
-        elif message_input != "end client":
+        elif target_username != None and sessionID != None and message_input != "end client":
             client_socket.CHAT(message_input, target_username, sessionID, machine)
+        else:
+            print("Invalid input. If you are trying to send a message, you are not currently connected to a chat session.")
 
 client_socket.tcp_client.close()

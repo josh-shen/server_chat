@@ -74,7 +74,7 @@ if __name__ == '__main__':
     connected_pair = []
     message_queues = {}
     online_sessionIDs = []
-    online_sessions = {}
+    online_sessions = {} # timeout values for each session
     
     #user database query
     database = db.get_database()
@@ -199,16 +199,14 @@ if __name__ == '__main__':
                             timer_thread.start()
                         else:
                             connection_senderID = message["senderID"]
-                            connection_targetID = ID
                             socket_index = online_clientIDs.index(connection_senderID)
                             response_socket = inputs[socket_index + 2]
-                            sv.UNREACHABLE(response_socket, connection_targetID, machine)
+                            sv.UNREACHABLE(response_socket, message["target_username"], machine)
                     else:
                         connection_senderID = message["senderID"]
-                        connection_targetID = ID
                         socket_index = online_clientIDs.index(connection_senderID)
                         response_socket = inputs[socket_index + 2]
-                        sv.UNREACHABLE(response_socket, connection_targetID, machine)
+                        sv.UNREACHABLE(response_socket, message["target_username"], machine)
                 elif message["message_type"] == "END_REQUEST":
                     client_pair = [tuple_elem for tuple_elem in connected_pair 
                         if tuple_elem[0] == message["senderID"] or tuple_elem[1] == message["senderID"]]
@@ -216,7 +214,7 @@ if __name__ == '__main__':
                         connected_pair.remove(client_pair[0])
 
                     connection_senderID = message["senderID"]
-                    connection_targetID = message["target_username"]
+                    connection_targetID = utils.username_to_ID(clients, message["target_username"])
                     sessionID = message["sessionID"]
                     lock.acquire()
                     online_sessions[sessionID] = 0
@@ -229,7 +227,7 @@ if __name__ == '__main__':
                     continue
                 elif message["message_type"] == "LOG_OFF":
                     senderID = message["senderID"]
-                    targetID = message["target_username"]
+                    targetID = utils.username_to_ID(clients, message["target_username"])
                     socket_index = online_clientIDs.index(senderID)
                     response_socket = inputs[socket_index + 2]
                     sv.LOG_OFF(response_socket, machine)

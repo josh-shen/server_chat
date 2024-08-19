@@ -36,9 +36,9 @@ def CHAT_STARTED (socket, target_client_username, sessionID, machine):
     encMessage = machine.encrypt_message(pickleMessage) 
     socket.send(encMessage)   
 
-def UNREACHABLE(socket, target_clientID, machine):
-    body = "client with ID[" + target_clientID + "] is unreachable"
-    message = messageDict(senderID="SERVER", targetID=target_clientID, message_type="UNREACHABLE", message_body=body)
+def UNREACHABLE(socket, target_client_username, machine):
+    body = "client [" + target_client_username + "] is unreachable"
+    message = messageDict(senderID="SERVER", target_username=target_client_username, message_type="UNREACHABLE", message_body=body)
     unencrypted_bytes = pickle.dumps(message)
     encrypted_bytes = machine.encrypt_message(unencrypted_bytes)
     socket.send(encrypted_bytes)
