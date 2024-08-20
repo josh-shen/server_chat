@@ -12,7 +12,7 @@ class aes_cipher:
         if type(input) != bytes:
             input = input.encode()
         input = pad(input, self.block_size)
-        #create a random initialization vector
+        # create a random initialization vector
         iv = get_random_bytes(self.block_size)
         cipher = AES.new(self.key, AES.MODE_CBC, iv)
         encrypted_bytes = cipher.encrypt(input)

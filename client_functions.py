@@ -16,7 +16,7 @@ class client_API:
         self.clientID = None
         self.salt = None
 
-    # UDP SECTION
+    # UDP section
     def HELLO(self):
         self.udp_client.send(str.encode("HELLO " + str(self.client_username)))
 
@@ -26,7 +26,7 @@ class client_API:
         self.salt = salt # need this for decryption
         self.udp_client.send(message + salted_password)
     
-    # TCP SECTION
+    # TCP section
     def CONNECT(self, cookie, machine):
         message = messageDict(message_type="CONNECT", senderID=self.clientID, username=self.client_username, cookie=cookie)
         unencrypted_bytes = pickle.dumps(message)

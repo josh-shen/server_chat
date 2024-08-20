@@ -11,8 +11,8 @@ target_username = None
 sessionID = None
 
 # client credentials
-USERNAME = "user1"
-PASSWORD = "test"
+USERNAME = ""
+PASSWORD = ""
 
 # message receive thread (from either server or another client)
 def msg_recv(machine: aes_cipher):
@@ -26,17 +26,14 @@ def msg_recv(machine: aes_cipher):
         message = pickle.loads(decrypted_bytes)
 
         if message["message_type"] == "CHAT_STARTED":
-            # chat started with target client, set target username and session ID
             global target_username
-            if target_username == None:
-                target_username = message["target_username"]
+            target_username = message["target_username"]
             
             global sessionID 
             sessionID = message["sessionID"] 
         elif message["message_type"] == "UNREACHABLE":
             target_username = None
         elif message["message_type"] == "END_NOTIF":
-            # chat session closed, clear target username and session ID
             target_username = None
             sessionID = None
         elif message["message_type"] == "LOG_OFF":
@@ -69,7 +66,7 @@ while True:
         if ins == "logon":
             connect_type = 1
         elif ins == "exit":
-            utils.screenClear()
+            utils.clear_screen()
             exit()
         else:
             print("invalid input")
@@ -92,6 +89,7 @@ while True:
                 client_socket.tcp_client.connect((HOST, int(PORT)))
                 client_socket.CONNECT(cookie, machine)
                 print("Authentication successful. Sending TCP connect message")
+                
                 recv_thread = threading.Thread(target = msg_recv, args = (machine,))
                 recv_thread.start()
             elif reply != [] and reply[0] == "AUTH_FAIL":
@@ -100,7 +98,7 @@ while True:
                 print("Authentication failed")
                 break
             
-            # wait for response from server
+            # response from server
             if connect_type == 1:
                 client_socket.udp_client.settimeout(5)
                 reply = client_socket.udp_client.recv(1024)
@@ -125,22 +123,18 @@ while True:
     # connect type 2 - connected to server
     elif connect_type == 2:
         message_input = input("")
-        print ("\033[A                             \033[A") #clear input line
+        print ("\033[A                             \033[A") # clear input line
         print(">", message_input)
 
         if message_input.split()[0] == "chat":
-            # send chat request with target client to server
             target_username = message_input.split()[1]
             client_socket.CHAT_REQUEST(target_username, machine)
         elif target_username != None and sessionID != None and message_input == "end chat":
-            # send chat end request with target client to server
             client_socket.END_REQUEST(target_username, sessionID, machine)
         elif message_input == "logoff":
-            # send logoff request to server
             client_socket.LOG_OFF(target_username, sessionID, machine)
             connect_type = 0
         elif target_username != None and sessionID != None and message_input != "end client":
-            # send chat message 
             client_socket.CHAT(message_input, target_username, sessionID, machine)
         else:
             print("Invalid input. If you are trying to send a message, you are not currently connected to a chat session.")

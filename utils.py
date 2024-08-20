@@ -1,24 +1,25 @@
 import os
 from uuid import uuid4
 
-#global constants
+# globals
 TIMEOUT_VAL = 60
 PRIVATE_ADDRESS = 'localhost'   # server internal IP address, use 'localhost' for testing
 SERVER_ADDRESS = 'localhost' # server external IP address, use 'localhost' for testing
+session_timeouts = {}
 
 def messageDict(message_type, senderID, username=None, message_body=None, targetID=None, target_username=None, cookie=None, salt=None, sessionID=None):
     return { 
-    'message_type': message_type,
-    'senderID': senderID,
-    'username': username,
-    'message_body': message_body,
-    'targetID': targetID,
-    'target_username': target_username,
-    'cookie': cookie,
-    'sessionID': sessionID
+        'message_type': message_type,
+        'senderID': senderID,
+        'username': username,
+        'message_body': message_body,
+        'targetID': targetID,
+        'target_username': target_username,
+        'cookie': cookie,
+        'sessionID': sessionID
     }
 
-def screenClear():
+def clear_screen():
     if os.name == 'posix':
         os.system('clear')
     else:
