@@ -6,15 +6,14 @@ import server_functions as sv
 import db
 import utils
 
-lock = threading.Lock()
-# connection information
-INTERNAL_HOST = utils.PRIVATE_ADDRESS
-EXTERNAL_HOST = utils.SERVER_ADDRESS
-PORT = 3389 # have multiple ports available ?
-TIMEOUT_TIME = utils.TIMEOUT_VAL
-
 if __name__ == "__main__":
-    print("server running\n")
+    lock = threading.Lock()
+
+    # connection information
+    INTERNAL_HOST = utils.PRIVATE_ADDRESS
+    EXTERNAL_HOST = utils.SERVER_ADDRESS
+    PORT = 3389
+
     # create server UDP socket
     udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     # create server TCP socket
@@ -24,6 +23,7 @@ if __name__ == "__main__":
     # sockets
     inputs = [udp_socket, tcp_socket]
     outputs = []
+
     # connection varaibles
     address_to_ID = {}
     online_clientIDs = []
@@ -40,17 +40,17 @@ if __name__ == "__main__":
     try:
         udp_socket.bind((INTERNAL_HOST, PORT))
     except socket.error as e:
-        print(str(e))
-        utils.clear_screen()
+        utils.terminal_print(str(e), "error")
         exit()
     # bind TCP socket
     try:
         tcp_socket.bind((INTERNAL_HOST, PORT))
     except socket.error as e:
-        print(str(e))
-        utils.clear_screen()
+        utils.terminal_print(str(e), "error")
         exit()
-    tcp_socket.listen(16)
+    tcp_socket.listen(16) # allow up to 16 connections
+
+    utils.terminal_print("Server running\n", "success")
  
     while True:
         readable, writable, exceptional = select.select(inputs, outputs, inputs)
@@ -59,7 +59,8 @@ if __name__ == "__main__":
             if s is udp_socket:
                 bytes, addr = udp_socket.recvfrom(2048)
                 data = bytes.decode("utf-8").split()
-                print("received: ", data)
+
+                utils.terminal_print(f"Received: {data}")
 
                 if data[0] == "HELLO":
                     client_username = data[1]
@@ -86,8 +87,10 @@ if __name__ == "__main__":
             elif s is tcp_socket:
                 # establish TCP connection with client
                 connection, client_address = tcp_socket.accept()
-                print("\nnew connection from ", client_address, "\n")
-                connection.setblocking(0)
+
+                utils.terminal_print(f"\nNew connection from {client_address}\n", "success")
+
+                connection.setblocking(0) # non-blocking
                 inputs.append(connection)
                 online_client_sockets.append(connection)
                 message_queues[connection] = queue.Queue()
@@ -103,20 +106,21 @@ if __name__ == "__main__":
                 machine = create_machine(clients[id]["password"], clients[id]["salt"])
                 decrypted_bytes = machine.decrypt_message(encrypted_bytes)
                 message = pickle.loads(decrypted_bytes)
-                print("received: ", message)
+
+                utils.terminal_print(f"Received: {data}")
 
                 if message["message_type"] == "CONNECT":
                     # verify authentication with cookie, add client to list of online clients
                     if clients[id]["cookie"] == message["cookie"]:
                         connected_clientID = message["senderID"]
-                        sv.CONNECTED(s, machine)
                         online_clientIDs.append(connected_clientID)
                         clients[connected_clientID]["socket"] = s
-                        
+                        sv.CONNECTED(s, machine)
                     continue
                 elif message["message_type"] == "CHAT_REQUEST":
                     senderID = message["senderID"]
                     targetID = utils.username_to_ID(clients, message["target_username"])
+                    
                     # check if target client is online
                     online = targetID in online_clientIDs
                     if online:
@@ -126,6 +130,7 @@ if __name__ == "__main__":
                             for tuple_elem in connected_pair
                             if tuple_elem[0] == targetID or tuple_elem[1] == targetID
                         ]
+
                         if not paired and senderID != targetID:
                             # add clients to connected pair
                             connected_pair.append(tuple((senderID, targetID)))
@@ -140,6 +145,7 @@ if __name__ == "__main__":
                             socket_index = online_clientIDs.index(senderID)
                             sender_socket = inputs[socket_index + 2]  # +2 to account for server udp and tcp socket
                             sv.CHAT_STARTED(sender_socket, message["target_username"], sessionID, machine)
+
                             socket_index = online_clientIDs.index(targetID)
                             target_socket = inputs[socket_index + 2]
                             target_machine = create_machine(clients[targetID]["password"], clients[targetID]["salt"])
@@ -162,7 +168,6 @@ if __name__ == "__main__":
                     senderID = message["senderID"]
                     targetID = utils.username_to_ID(clients, message["target_username"])
                     sessionID = message["sessionID"]
-
                     sv.CLOSE(senderID, targetID, sessionID, online_sessionIDs, lock, connected_pair, clients, inputs, online_clientIDs)                    
                     
                     continue
@@ -206,7 +211,6 @@ if __name__ == "__main__":
             except queue.Empty:
                 outputs.remove(s)
             else:
-                print("session ", message["sessionID"], ": sending", next_message["message_body"], " to ", next_message["target_username"])
                 senderID = next_message["senderID"]
                 next_message["username"] = clients[senderID]["username"]
 
@@ -216,6 +220,7 @@ if __name__ == "__main__":
                     or tupleElem[1] == next_message["senderID"]
                 ]
 
+                # find target client in connected pair
                 if client_pair[0][0] == senderID:
                     target = online_clientIDs.index(client_pair[0][1])
                 else:
@@ -228,11 +233,14 @@ if __name__ == "__main__":
                 encrypted_bytes = machine.encrypt_message(unencrypted_bytes)
                 inputs[target + 2].send(encrypted_bytes)
                 
+                utils.terminal_print(f"Session {message["sessionID"]}: sending [{next_message["message_body"]}] to {next_message["target_username"]}")
+
                 # reset timeout
-                print("\nmessage sent - reset timer\n")
                 lock.acquire()
                 utils.session_timeouts[sessionID] = utils.TIMEOUT_VAL
                 lock.release()
+
+                utils.terminal_print("\nMessage sent - reset timer\n", "info")
         for s in exceptional: # handle errors - close socket if error (not used right now)
             print("handleing error")
             inputs.remove(s)

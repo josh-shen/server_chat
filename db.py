@@ -1,5 +1,6 @@
 from pymongo import MongoClient
 from pymongo.server_api import ServerApi
+import utils
 
 def get_database():
     CONNECTION_STRING = ""
@@ -8,10 +9,10 @@ def get_database():
 
     # Send a ping to confirm a successful connection
     try:
-        client.admin.command('ping')
-        print("Pinged your deployment. You successfully connected to MongoDB!")
+        client.admin.command("ping")
+        utils.terminal_print("Connected to MongoDB successfully\n", "success")
     except Exception as e:
-        print(e)
+        utils.terminal_print(e, "error")
 
     return client["users"]
 

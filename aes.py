@@ -11,12 +11,15 @@ class aes_cipher:
     def encrypt_message(self, input):
         if type(input) != bytes:
             input = input.encode()
+
         input = pad(input, self.block_size)
+        
         # create a random initialization vector
         iv = get_random_bytes(self.block_size)
         cipher = AES.new(self.key, AES.MODE_CBC, iv)
         encrypted_bytes = cipher.encrypt(input)
         iv_message = iv + encrypted_bytes
+
         return base64.urlsafe_b64encode(iv_message)
 
     def decrypt_message(self, b64_string):
@@ -25,9 +28,11 @@ class aes_cipher:
         encrypted_bytes = iv_message[self.block_size:]
         cipher = AES.new(self.key, AES.MODE_CBC, iv)
         padded_output = cipher.decrypt(encrypted_bytes)
+
         return unpad(padded_output, self.block_size)
 
 def create_machine(client_key, salt):
-    ck_a = hashlib.pbkdf2_hmac('SHA256', str(client_key).encode(), salt, 100000)
+    ck_a = hashlib.pbkdf2_hmac("SHA256", str(client_key).encode(), salt, 100000)
     machine = aes_cipher(ck_a)
+
     return machine 

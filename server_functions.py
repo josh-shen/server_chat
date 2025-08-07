@@ -1,6 +1,6 @@
 import pickle, time
 
-from utils import messageDict, session_timeouts, TIMEOUT_VAL
+from utils import messageDict, session_timeouts, TIMEOUT_VAL, terminal_print
 from aes import create_machine
 
 # UDP section
@@ -10,10 +10,10 @@ def CHALLENGE(socket, addr, rand):
     socket.sendto(message, addr)
 
 def AUTH_SUCCESS(socket, addr, clientID, cookie, password, salt, port, host):
-    resp = "AUTH_SUCCESS " + str(clientID) + " " + str(port) + " " + str(host) + " " + cookie
+    resp = f"AUTH_SUCCESS {str(clientID)} {str(port)} {str(host)} {cookie} "
     machine = create_machine(password, salt)
     encrypted_message = machine.encrypt_message(resp)
-    auth_type = 'as '.encode()
+    auth_type = "as ".encode()
     encrypted_message = auth_type + encrypted_message
     socket.sendto(encrypted_message, addr)
 
@@ -30,29 +30,29 @@ def CONNECTED(socket, machine):
     socket.send(encrypted_bytes)
 
 def CHAT_STARTED (socket, target_client_username, sessionID, machine):
-    body = "connected to client [" + target_client_username +"]" 
+    body = f"connected to client [{target_client_username}]"
     message = messageDict(senderID="SERVER", target_username=target_client_username, sessionID=sessionID, message_type="CHAT_STARTED", message_body=body)
     pickleMessage = pickle.dumps(message)
     encMessage = machine.encrypt_message(pickleMessage) 
     socket.send(encMessage)   
 
 def UNREACHABLE(socket, target_client_username, machine):
-    body = "client [" + target_client_username + "] is unreachable"
-    message = messageDict(senderID="SERVER", target_username=target_client_username, message_type="UNREACHABLE", message_body=body)
+    body = f"client [{target_client_username}] is unreachable"
+    message = messageDict(senderID="SERVER_ERROR", target_username=target_client_username, message_type="UNREACHABLE", message_body=body)
     unencrypted_bytes = pickle.dumps(message)
     encrypted_bytes = machine.encrypt_message(unencrypted_bytes)
     socket.send(encrypted_bytes)
 
 def END_NOTIF(socket, machine):
     body = "session has been terminated"
-    message = messageDict(senderID = "SERVER", message_type = "END_NOTIF", message_body = body)
+    message = messageDict(senderID = "SERVER_ERROR", message_type = "END_NOTIF", message_body = body)
     unencrypted_bytes = pickle.dumps(message)
     encrypted_bytes = machine.encrypt_message(unencrypted_bytes)
     socket.send(encrypted_bytes)
 
 def TIMEOUT_WARNING(socket, machine):
-    body = "chat is disconnecting in 15 seconds, send or recive a message to reset the timer"
-    message = messageDict(senderID = "SERVER", message_type = "TIMEOUT_WARN", message_body = body)
+    body = "chat is disconnecting in 15 seconds, send a message to reset the timer"
+    message = messageDict(senderID = "SERVER_WARNING", message_type = "TIMEOUT_WARN", message_body = body)
     unencrypted_bytes = pickle.dumps(message)
     encrypted_bytes = machine.encrypt_message(unencrypted_bytes)
     socket.send(encrypted_bytes)
@@ -64,7 +64,8 @@ def LOG_OFF(socket, machine):
     socket.send(encrypted_bytes)
 
 def TIMEOUT(session, sessionIDs, lock, connected_pair, client, socket1, socket2, machine1, machine2):
-    print("\ntimeout thread started\n")
+    terminal_print(f"\nTimeout thread started for session {session}\n", "info")
+    
     timeout = False
 
     # start timeout counter
@@ -83,15 +84,17 @@ def TIMEOUT(session, sessionIDs, lock, connected_pair, client, socket1, socket2,
         timeout = True if timeout_time == 0 else False
 
         if timeout_time <= 0:
-            print("exiting timeout thread for session ", session, "\n")
             lock.acquire()
             session_timeouts[session] = 0
             lock.release()
+
+            terminal_print(f"Exiting timeout thread for session {session}\n", "info")
             break  # timeout
         elif timeout_time == 15:
-            print("\nsending warning to session ", session, "\n")
             TIMEOUT_WARNING(socket1, machine1)
             TIMEOUT_WARNING(socket2, machine2)
+
+            terminal_print(f"Sending timeout warning to session {session}\n", "info")
 
     # end connection with other client if timeout
     if timeout:
@@ -111,6 +114,8 @@ def TIMEOUT(session, sessionIDs, lock, connected_pair, client, socket1, socket2,
 
         END_NOTIF(socket1, machine1)
         END_NOTIF(socket2, machine2)
+
+        terminal_print(f"Session {session} timed out\n", "error")
 
 def DISCONNECT(connectionID, clients, inputs, online_clientIDs):
     socket_index = online_clientIDs.index(connectionID)
@@ -136,4 +141,5 @@ def CLOSE(senderID, targetID, sessionID, online_sessionIDs, lock, connected_pair
 
         DISCONNECT(senderID, clients, inputs, online_clientIDs)
         DISCONNECT(targetID, clients, inputs, online_clientIDs)
-        print("\nsession ", sessionID, " removed\n")
+
+        terminal_print(f"\nSession {sessionID} removed\n", "info")
