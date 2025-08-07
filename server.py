@@ -1,4 +1,4 @@
-import bcrypt, pickle, queue, socket, select, secrets, threading
+import bcrypt, pickle, queue, socket, select, threading
 from secrets import token_urlsafe
 
 from aes import create_machine
@@ -8,7 +8,7 @@ import utils
 
 lock = threading.Lock()
 # connection information
-INTERNAL_HOST = utils.PRIVATE_ADDRESS  # server internal IP address
+INTERNAL_HOST = utils.PRIVATE_ADDRESS
 EXTERNAL_HOST = utils.SERVER_ADDRESS
 PORT = 3389 # have multiple ports available ?
 TIMEOUT_TIME = utils.TIMEOUT_VAL
@@ -70,7 +70,7 @@ if __name__ == "__main__":
                     password = clients[clientID]["password"]
                     salt = clients[clientID]["salt"] = bcrypt.gensalt()
                     clients[clientID]["salted_password"] = bcrypt.hashpw(str(password).encode(), salt)
-                    sv.CHALLENGE(udp_socket, addr, clientID, salt)
+                    sv.CHALLENGE(udp_socket, addr, salt)
                 if data[0] == "RESPONSE":
                     salted_password = data[1]
                     clientID = address_to_ID[addr]
@@ -146,7 +146,7 @@ if __name__ == "__main__":
                             sv.CHAT_STARTED(target_socket, message["username"], sessionID, target_machine)
                             
                             # start timer thread
-                            timer_thread = threading.Thread(target=sv.chat_timeout, args=(sessionID, online_sessionIDs, lock, connected_pair, senderID, sender_socket, target_socket, machine, target_machine))
+                            timer_thread = threading.Thread(target=sv.TIMEOUT, args=(sessionID, online_sessionIDs, lock, connected_pair, senderID, sender_socket, target_socket, machine, target_machine))
                             timer_thread.start()
                         else:
                             senderID = message["senderID"]
@@ -163,7 +163,7 @@ if __name__ == "__main__":
                     targetID = utils.username_to_ID(clients, message["target_username"])
                     sessionID = message["sessionID"]
 
-                    sv.close_session(senderID, targetID, sessionID, online_sessionIDs, lock, connected_pair, clients, inputs, online_clientIDs)                    
+                    sv.CLOSE(senderID, targetID, sessionID, online_sessionIDs, lock, connected_pair, clients, inputs, online_clientIDs)                    
                     
                     continue
                 elif message["message_type"] == "LOG_OFF":
@@ -175,7 +175,7 @@ if __name__ == "__main__":
 
                     # if logging off from a chat session, end the chat session
                     if message["sessionID"] != None:
-                        sv.close_session(senderID, targetID, sessionID, online_sessionIDs, lock, connected_pair, clients, inputs, online_clientIDs)                    
+                        sv.CLOSE(senderID, targetID, sessionID, online_sessionIDs, lock, connected_pair, clients, inputs, online_clientIDs)                    
                     
                     # end TCP connection
                     online_clientIDs.remove(senderID)

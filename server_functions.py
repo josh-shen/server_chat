@@ -1,10 +1,10 @@
-import socket, pickle, time
+import pickle, time
 
 from utils import messageDict, session_timeouts, TIMEOUT_VAL
-from aes import aes_cipher, create_machine
+from aes import create_machine
 
 # UDP section
-def CHALLENGE(socket, addr, clientID, rand):
+def CHALLENGE(socket, addr, rand):
     resp = "CHALLENGE "
     message = resp.encode() + rand
     socket.sendto(message, addr)
@@ -63,7 +63,7 @@ def LOG_OFF(socket, machine):
     encrypted_bytes = machine.encrypt_message(unencrypted_bytes)
     socket.send(encrypted_bytes)
 
-def chat_timeout(session, sessionIDs, lock, connected_pair, client, socket1, socket2, machine1, machine2):
+def TIMEOUT(session, sessionIDs, lock, connected_pair, client, socket1, socket2, machine1, machine2):
     print("\ntimeout thread started\n")
     timeout = False
 
@@ -112,13 +112,13 @@ def chat_timeout(session, sessionIDs, lock, connected_pair, client, socket1, soc
         END_NOTIF(socket1, machine1)
         END_NOTIF(socket2, machine2)
 
-def disconnect_message(connectionID, clients, inputs, online_clientIDs):
+def DISCONNECT(connectionID, clients, inputs, online_clientIDs):
     socket_index = online_clientIDs.index(connectionID)
     response_socket = inputs[socket_index + 2]
     machine = create_machine(clients[connectionID]["password"], clients[connectionID]["salt"])
     END_NOTIF(response_socket, machine)
 
-def close_session(senderID, targetID, sessionID, online_sessionIDs, lock, connected_pair, clients, inputs, online_clientIDs):
+def CLOSE(senderID, targetID, sessionID, online_sessionIDs, lock, connected_pair, clients, inputs, online_clientIDs):
     client_pair = [
         tupleElem for tupleElem in connected_pair 
         if tupleElem[0] == senderID 
@@ -134,6 +134,6 @@ def close_session(senderID, targetID, sessionID, online_sessionIDs, lock, connec
         connected_pair.remove(client_pair[0])
         online_sessionIDs.remove(sessionID)
 
-        disconnect_message(senderID, clients, inputs, online_clientIDs)
-        disconnect_message(targetID, clients, inputs, online_clientIDs)
+        DISCONNECT(senderID, clients, inputs, online_clientIDs)
+        DISCONNECT(targetID, clients, inputs, online_clientIDs)
         print("\nsession ", sessionID, " removed\n")
