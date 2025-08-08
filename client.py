@@ -27,7 +27,7 @@ def msg_recv(machine: aes_cipher):
         elif message["message_type"] == "END_NOTIF":
             target_username = None
             sessionID = None
-        elif message["message_type"] == "LOG_OFF":
+        elif message["message_type"] == "LOG_OFF_NOTIF":
             # clear target username and session ID if still in a chat session
             target_username = None
             sessionID = None
@@ -46,8 +46,6 @@ def msg_recv(machine: aes_cipher):
         
         if (message_type == "SERVER_ERROR"):
             utils.terminal_print(recv_message, "error")
-        elif (message_type == "SERVER_WARNING"):
-            utils.terminal_print(recv_message, "warning")
         elif (message_type == "SERVER"):
             utils.terminal_print(recv_message, "info")
         else:
@@ -66,14 +64,12 @@ if __name__ == "__main__":
     USERNAME = ""
     PASSWORD = ""
 
-    client_socket = cl.client_API(USERNAME, PASSWORD)
-
     while True:
         # connect type 0 - not connected to server
         if connect_type == 0: 
             utils.terminal_print("type 'logon' to start connection  or 'exit' to shut the app")
 
-            ins = input()
+            ins = input("")
             utils.clear_line()
 
             if ins == "logon":
@@ -83,8 +79,15 @@ if __name__ == "__main__":
                 exit()
             else:
                 utils.terminal_print("invalid input", "error")
-        # connect type 1 - authenticating with server
-        elif connect_type == 1: 
+        # connect type 1 - inputting credentials
+        elif connect_type == 1:
+            USERNAME = input("")
+            PASSWORD = input("")
+            client_socket = cl.client_API(USERNAME, PASSWORD)
+
+            connect_type = 2
+        # connect type 2 - authenticating with server
+        elif connect_type == 2: 
             try:
                 if reply == None:
                     # start authentication process with server
@@ -95,7 +98,7 @@ if __name__ == "__main__":
                     client_socket.RESPONSE(PASSWORD, salt.encode())
                 elif reply != [] and reply[0] == "AUTH_SUCCESS":
                     # authentication successful, start TCP connection with server
-                    connect_type = 2
+                    connect_type = 3
 
                     # set ID received from the server
                     client_socket.clientID = ID
@@ -113,10 +116,11 @@ if __name__ == "__main__":
                     client_socket.udp_client.close()
 
                     utils.terminal_print("Authentication failed", "error")
-                    break
+                    
+                    connect_type = 1
                 
                 # response from server
-                if connect_type == 1:
+                if connect_type == 2:
                     client_socket.udp_client.settimeout(5)
                     reply = client_socket.udp_client.recv(1024)
                     bytes_check = reply[:2]
@@ -130,16 +134,14 @@ if __name__ == "__main__":
                         HOST = reply[3]
                         client_socket.cookie = reply[4]
                     else:
-                        reply = reply.decode("utf-8").split() 
-
-                    #utils.terminal_print(reply, "info")
+                        reply = reply.decode("utf-8").split()
             except socket.timeout:
                 reply = None
 
-                utils.terminal_print("time out", "error")
+                utils.terminal_print("Timed out", "error")
                 break
-        # connect type 2 - connected to server
-        elif connect_type == 2:
+        # connect type 3 - connected to server
+        elif connect_type == 3:
             message_input = input("")
             utils.clear_line()
 
@@ -151,13 +153,15 @@ if __name__ == "__main__":
             elif target_username != None and sessionID != None and message_input == "end chat":
                 client_socket.END_REQUEST(target_username, sessionID, machine)
             elif message_input == "logoff":
-                client_socket.LOG_OFF(target_username, sessionID, machine)
+                client_socket.LOG_OFF_REQUEST(target_username, sessionID, machine)
+
+                # reset connection variables
+                reply = None
                 connect_type = 0
-            elif target_username != None and sessionID != None and message_input != "end client":
+            elif target_username != None and sessionID != None:
                 client_socket.CHAT(message_input, target_username, sessionID, machine)
             else:
                 utils.terminal_print("Invalid input. If you are trying to send a message, you are not currently connected to a chat session.", "error")
-        # connect type not 0, 1, or 2 (this should never happen)
         else:
             break
 

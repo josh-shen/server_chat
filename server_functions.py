@@ -52,13 +52,13 @@ def END_NOTIF(socket, machine):
 
 def TIMEOUT_WARNING(socket, machine):
     body = "chat is disconnecting in 15 seconds, send a message to reset the timer"
-    message = messageDict(senderID = "SERVER_WARNING", message_type = "TIMEOUT_WARN", message_body = body)
+    message = messageDict(senderID = "SERVER", message_type = "TIMEOUT_WARN", message_body = body)
     unencrypted_bytes = pickle.dumps(message)
     encrypted_bytes = machine.encrypt_message(unencrypted_bytes)
     socket.send(encrypted_bytes)
 
-def LOG_OFF(socket, machine):
-    message = messageDict(senderID = "SERVER", message_type = "LOG_OFF")
+def LOG_OFF_NOTIF(socket, machine):
+    message = messageDict(senderID = "SERVER", message_type = "LOG_OFF_NOTIF")
     unencrypted_bytes = pickle.dumps(message)
     encrypted_bytes = machine.encrypt_message(unencrypted_bytes)
     socket.send(encrypted_bytes)

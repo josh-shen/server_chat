@@ -116,6 +116,9 @@ if __name__ == "__main__":
                         online_clientIDs.append(connected_clientID)
                         clients[connected_clientID]["socket"] = s
                         sv.CONNECTED(s, machine)
+                    else:
+                        # authentication failed - cookie mismatch
+                        utils.terminal_print("Authentication failed", "error")
                     continue
                 elif message["message_type"] == "CHAT_REQUEST":
                     senderID = message["senderID"]
@@ -155,11 +158,13 @@ if __name__ == "__main__":
                             timer_thread = threading.Thread(target=sv.TIMEOUT, args=(sessionID, online_sessionIDs, lock, connected_pair, senderID, sender_socket, target_socket, machine, target_machine))
                             timer_thread.start()
                         else:
+                            # target is already in a chat, or target is same as sender
                             senderID = message["senderID"]
                             socket_index = online_clientIDs.index(senderID)
                             response_socket = inputs[socket_index + 2]
                             sv.UNREACHABLE(response_socket, message["target_username"], machine)
                     else:
+                        # target client is not online
                         senderID = message["senderID"]
                         socket_index = online_clientIDs.index(senderID)
                         response_socket = inputs[socket_index + 2]
@@ -171,12 +176,12 @@ if __name__ == "__main__":
                     sv.CLOSE(senderID, targetID, sessionID, online_sessionIDs, lock, connected_pair, clients, inputs, online_clientIDs)                    
                     
                     continue
-                elif message["message_type"] == "LOG_OFF":
+                elif message["message_type"] == "LOG_OFF_REQUEST":
                     senderID = message["senderID"]
                     targetID = utils.username_to_ID(clients, message["target_username"])
                     socket_index = online_clientIDs.index(senderID)
                     response_socket = inputs[socket_index + 2]
-                    sv.LOG_OFF(response_socket, machine)
+                    sv.LOG_OFF_NOTIF(response_socket, machine)
 
                     # if logging off from a chat session, end the chat session
                     if message["sessionID"] != None:
@@ -233,7 +238,7 @@ if __name__ == "__main__":
                 encrypted_bytes = machine.encrypt_message(unencrypted_bytes)
                 inputs[target + 2].send(encrypted_bytes)
                 
-                utils.terminal_print(f"Session {message["sessionID"]}: sending [{next_message["message_body"]}] to {next_message["target_username"]}")
+                utils.terminal_print(f"Session {message['sessionID']}: sending [{next_message['message_body']}] to {next_message['target_username']}")
 
                 # reset timeout
                 lock.acquire()

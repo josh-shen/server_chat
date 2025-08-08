@@ -55,8 +55,8 @@ class client_API:
         message = self.clientID.encode() + encrypted_bytes
         self.tcp_client.send(message)
     
-    def LOG_OFF(self, target_username, sessionID, machine):
-        message = messageDict(message_type="LOG_OFF", senderID=self.clientID, username=self.client_username, target_username=target_username, sessionID=sessionID)
+    def LOG_OFF_REQUEST(self, target_username, sessionID, machine):
+        message = messageDict(message_type="LOG_OFF_REQUEST", senderID=self.clientID, username=self.client_username, target_username=target_username, sessionID=sessionID)
         unencrypted_bytes = pickle.dumps(message)
         encrypted_bytes = machine.encrypt_message(unencrypted_bytes)
         message = self.clientID.encode() + encrypted_bytes

@@ -8,20 +8,20 @@ session_timeouts = {}
 
 def messageDict(message_type, senderID, username=None, message_body=None, targetID=None, target_username=None, cookie=None, sessionID=None):
     return { 
-        'message_type': message_type,
-        'senderID': senderID,
-        'username': username,
-        'message_body': message_body,
-        'targetID': targetID,
-        'target_username': target_username,
-        'cookie': cookie,
-        'sessionID': sessionID
+        "message_type": message_type,
+        "senderID": senderID,
+        "username": username,
+        "message_body": message_body,
+        "targetID": targetID,
+        "target_username": target_username,
+        "cookie": cookie,
+        "sessionID": sessionID
     }
         
 def gen_sessionID(existing_sessionIDs):
     while True:
         i = uuid4().int
-        mask = '0b111111111111111111111111111111111111111111111111111111111111111'
+        mask = "0b111111111111111111111111111111111111111111111111111111111111111"
         i = i & int(mask, 2)
         if i not in existing_sessionIDs:
             return i
@@ -38,8 +38,6 @@ def terminal_print(message, type = None):
         print(f"\033[91m{message}\033[0m")
     elif type == "success":
         print(f"\033[92m{message}\033[0m")
-    elif type == "warning":
-        print(f"\033[33m{message}\033[0m")
     elif type == "info":
         print(f"\033[93m{message}\033[0m")
     elif type == "client":
@@ -48,10 +46,10 @@ def terminal_print(message, type = None):
         print(message)
 
 def clear_line():
-    print("\033[1A", end='')
+    print("\033[1A\033[K", end="")
 
 def clear_screen():
-    if os.name == 'posix':
-        os.system('clear')
+    if os.name == "posix":
+        os.system("clear")
     else:
-        os.system('cls')
+        os.system("cls")
