@@ -67,7 +67,12 @@ if __name__ == "__main__":
                     client_username = data[1]
                     clientID = utils.find_userID(clients, client_username)
 
+                    # client does not exist
                     if not clientID:
+                        sv.AUTH_FAIL(udp_socket, addr)
+                        continue
+                    # client is already logged on
+                    if clientID in online_clientIDs:
                         sv.AUTH_FAIL(udp_socket, addr)
                         continue
 
