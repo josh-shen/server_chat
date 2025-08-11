@@ -1,7 +1,7 @@
 import pickle, socket, sys, time, threading
 
 from aes import aes_cipher, create_machine
-import utils
+from utils import messageDict, terminal_print, clear_line, clear_screen
 import client_functions as cl
 
 # message receive thread (from either server or another client)
@@ -22,6 +22,13 @@ def msg_recv(machine: aes_cipher):
             
             global sessionID 
             sessionID = message["sessionID"] 
+
+            # display chat history
+            history = message["message_body"]["body"]
+            for n in history:
+                terminal_print(n, "info")
+
+            message["message_body"] = message["message_body"]["server_message"]
         elif message["message_type"] == "UNREACHABLE":
             target_username = None
         elif message["message_type"] == "END_NOTIF":
@@ -45,11 +52,11 @@ def msg_recv(machine: aes_cipher):
         recv_message = f"> {identifier}: {message['message_body'] if message['message_body'] is not None else 'None'}"
         
         if (message_type == "SERVER_ERROR"):
-            utils.terminal_print(recv_message, "error")
+            terminal_print(recv_message, "error")
         elif (message_type == "SERVER"):
-            utils.terminal_print(recv_message, "info")
+            terminal_print(recv_message, "info")
         else:
-            utils.terminal_print(recv_message, "client")
+            terminal_print(recv_message, "client")
 
         sys.stdout.flush()
 
@@ -67,18 +74,18 @@ if __name__ == "__main__":
     while True:
         # connect type 0 - not connected to server
         if connect_type == 0: 
-            utils.terminal_print("type 'logon' to start connection  or 'exit' to shut the app")
+            terminal_print("type 'logon' to start connection  or 'exit' to shut the app")
 
             ins = input("")
-            utils.clear_line()
+            clear_line()
 
             if ins == "logon":
                 connect_type = 1
             elif ins == "exit":
-                utils.clear_screen()
+                clear_screen()
                 exit()
             else:
-                utils.terminal_print("invalid input", "error")
+                terminal_print("invalid input", "error")
         # connect type 1 - inputting credentials
         elif connect_type == 1:
             USERNAME = input("")
@@ -107,7 +114,7 @@ if __name__ == "__main__":
                     client_socket.tcp_client.connect((HOST, int(PORT)))
                     client_socket.CONNECT(machine)
 
-                    utils.terminal_print("Authentication successful. Sending TCP connect message", "success")
+                    terminal_print("Authentication successful. Sending TCP connect message", "success")
                     
                     recv_thread = threading.Thread(target = msg_recv, args = (machine,))
                     recv_thread.start()
@@ -115,7 +122,7 @@ if __name__ == "__main__":
                     reply = None
                     client_socket.udp_client.close()
 
-                    utils.terminal_print("Authentication failed", "error")
+                    terminal_print("Authentication failed", "error")
                     
                     connect_type = 1
                 
@@ -138,14 +145,14 @@ if __name__ == "__main__":
             except socket.timeout:
                 reply = None
 
-                utils.terminal_print("Timed out", "error")
+                terminal_print("Timed out", "error")
                 break
         # connect type 3 - connected to server
         elif connect_type == 3:
             message_input = input("")
-            utils.clear_line()
+            clear_line()
 
-            utils.terminal_print(f"> {message_input}")
+            terminal_print(f"> {message_input}")
 
             if message_input.split()[0] == "chat":
                 target_username = message_input.split()[1]
@@ -161,7 +168,7 @@ if __name__ == "__main__":
             elif target_username != None and sessionID != None:
                 client_socket.CHAT(message_input, target_username, sessionID, machine)
             else:
-                utils.terminal_print("Invalid input. If you are trying to send a message, you are not currently connected to a chat session.", "error")
+                terminal_print("Invalid input. If you are trying to send a message, you are not currently connected to a chat session.", "error")
         else:
             break
 

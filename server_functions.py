@@ -24,41 +24,42 @@ def AUTH_FAIL(socket, addr):
 
 # TCP section
 def CONNECTED(socket, machine):
-    message = messageDict(senderID="SERVER", message_type="CONNECTED", message_body="connected to server")
+    message = messageDict(message_type="CONNECTED", senderID="SERVER", message_body="connected to server")
     unencrypted_bytes = pickle.dumps(message)
     encrypted_bytes = machine.encrypt_message(unencrypted_bytes)
     socket.send(encrypted_bytes)
 
-def CHAT_STARTED (socket, target_client_username, sessionID, machine):
-    body = f"connected to client [{target_client_username}]"
-    message = messageDict(senderID="SERVER", target_username=target_client_username, sessionID=sessionID, message_type="CHAT_STARTED", message_body=body)
+def CHAT_STARTED (socket, target_client_username, sessionID, machine, history):
+    server_message = f"connected to client [{target_client_username}]"
+    body = {"server_message": server_message, "body": history}
+    message = messageDict(message_type="CHAT_STARTED", senderID="SERVER", target_username=target_client_username, sessionID=sessionID, message_body=body)
     pickleMessage = pickle.dumps(message)
     encMessage = machine.encrypt_message(pickleMessage) 
     socket.send(encMessage)   
 
 def UNREACHABLE(socket, target_client_username, machine):
     body = f"client [{target_client_username}] is unreachable"
-    message = messageDict(senderID="SERVER_ERROR", target_username=target_client_username, message_type="UNREACHABLE", message_body=body)
+    message = messageDict(message_type="UNREACHABLE", senderID="SERVER_ERROR", target_username=target_client_username, message_body=body)
     unencrypted_bytes = pickle.dumps(message)
     encrypted_bytes = machine.encrypt_message(unencrypted_bytes)
     socket.send(encrypted_bytes)
 
 def END_NOTIF(socket, machine):
     body = "session has been terminated"
-    message = messageDict(senderID = "SERVER_ERROR", message_type = "END_NOTIF", message_body = body)
+    message = messageDict(message_type = "END_NOTIF", senderID = "SERVER_ERROR", message_body = body)
     unencrypted_bytes = pickle.dumps(message)
     encrypted_bytes = machine.encrypt_message(unencrypted_bytes)
     socket.send(encrypted_bytes)
 
 def TIMEOUT_WARNING(socket, machine):
     body = "chat is disconnecting in 15 seconds, send a message to reset the timer"
-    message = messageDict(senderID = "SERVER", message_type = "TIMEOUT_WARN", message_body = body)
+    message = messageDict(message_type = "TIMEOUT_WARN", senderID = "SERVER", message_body = body)
     unencrypted_bytes = pickle.dumps(message)
     encrypted_bytes = machine.encrypt_message(unencrypted_bytes)
     socket.send(encrypted_bytes)
 
 def LOG_OFF_NOTIF(socket, machine):
-    message = messageDict(senderID = "SERVER", message_type = "LOG_OFF_NOTIF")
+    message = messageDict(message_type = "LOG_OFF_NOTIF", senderID = "SERVER")
     unencrypted_bytes = pickle.dumps(message)
     encrypted_bytes = machine.encrypt_message(unencrypted_bytes)
     socket.send(encrypted_bytes)

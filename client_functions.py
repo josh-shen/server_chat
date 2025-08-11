@@ -42,7 +42,7 @@ class client_API:
         self.tcp_client.send(message)
 
     def CHAT(self, body, target_username, sessionID, machine):
-        message = messageDict(message_type="CHAT", senderID=self.clientID, username=self.client_username, message_body=body, target_username=target_username, sessionID=sessionID)
+        message = messageDict(message_type="CHAT", senderID=self.clientID, username=self.client_username, target_username=target_username, sessionID=sessionID, message_body=body)
         unencrypted_bytes = pickle.dumps(message)
         encrypted_bytes = machine.encrypt_message(unencrypted_bytes)
         message = self.clientID.encode() + encrypted_bytes

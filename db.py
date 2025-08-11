@@ -10,13 +10,13 @@ def get_database():
     # Send a ping to confirm a successful connection
     try:
         client.admin.command("ping")
-        utils.terminal_print("Connected to MongoDB successfully\n", "success")
+        utils.terminal_print("Connected to MongoDB", "success")
     except Exception as e:
         utils.terminal_print(e, "error")
 
-    return client["users"]
+    return client["server"]
 
-def query(database):
+def get_users(database):
     clients = {}
     users = database["users"]
     item_details = users.find()
@@ -34,3 +34,19 @@ def query(database):
         clients[str(item["_id"])] = user
     
     return clients
+
+def get_sessions(database):
+    chat_sessions = {}
+    sessions = database["sessions"]
+    item_details = sessions.find()
+
+    for item in item_details:
+        session = {
+            "user1": item["user1"],
+            "user2": item["user2"],
+            "history": item["history"]
+        }
+        chat_sessions[str(item["_id"])] = session
+    
+    return chat_sessions
+

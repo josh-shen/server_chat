@@ -1,5 +1,6 @@
 import bcrypt, pickle, queue, socket, select, threading
 from secrets import token_urlsafe
+from bson.objectid import ObjectId
 
 from aes import create_machine
 import server_functions as sv
@@ -34,7 +35,7 @@ if __name__ == "__main__":
 
     # user database query
     database = db.get_database()
-    clients = db.query(database)
+    clients = db.get_users(database)
 
     # bind UDP socket
     try:
@@ -64,7 +65,12 @@ if __name__ == "__main__":
 
                 if data[0] == "HELLO":
                     client_username = data[1]
-                    clientID = utils.username_to_ID(clients, client_username)
+                    clientID = utils.find_userID(clients, client_username)
+
+                    if not clientID:
+                        sv.AUTH_FAIL(udp_socket, addr)
+                        continue
+
                     address_to_ID[addr] = clientID
 
                     # start auth challenge for client
@@ -107,7 +113,7 @@ if __name__ == "__main__":
                 decrypted_bytes = machine.decrypt_message(encrypted_bytes)
                 message = pickle.loads(decrypted_bytes)
 
-                utils.terminal_print(f"Received: {data}")
+                utils.terminal_print(f"Received {message["message_type"]} from {message["senderID"]}")
 
                 if message["message_type"] == "CONNECT":
                     # verify authentication with cookie, add client to list of online clients
@@ -122,7 +128,7 @@ if __name__ == "__main__":
                     continue
                 elif message["message_type"] == "CHAT_REQUEST":
                     senderID = message["senderID"]
-                    targetID = utils.username_to_ID(clients, message["target_username"])
+                    targetID = utils.find_userID(clients, message["target_username"])
                     
                     # check if target client is online
                     online = targetID in online_clientIDs
@@ -138,21 +144,36 @@ if __name__ == "__main__":
                             # add clients to connected pair
                             connected_pair.append(tuple((senderID, targetID)))
 
-                            # create session ID
+                            # check if session exists in database
+                            chat_sessions = db.get_sessions(database)
+                            sessionID = utils.find_sessionID(chat_sessions, senderID, targetID)
+
+                            if not sessionID:
+                                # first time chatting, create session ID and add to database
+                                session = {
+                                    "user1": senderID,
+                                    "user2": targetID,
+                                    "history": []
+                                }
+
+                                res = database["sessions"].insert_one(session)
+                                sessionID = res.inserted_id
+
                             lock.acquire()
-                            sessionID = utils.gen_sessionID(online_sessionIDs)
                             online_sessionIDs.append(sessionID)
                             lock.release()
+
+                            chat_history = chat_sessions[sessionID]["history"]       
 
                             # find sockets and notify both clients of chat connection
                             socket_index = online_clientIDs.index(senderID)
                             sender_socket = inputs[socket_index + 2]  # +2 to account for server udp and tcp socket
-                            sv.CHAT_STARTED(sender_socket, message["target_username"], sessionID, machine)
+                            sv.CHAT_STARTED(sender_socket, message["target_username"], sessionID, machine, chat_history)
 
                             socket_index = online_clientIDs.index(targetID)
                             target_socket = inputs[socket_index + 2]
                             target_machine = create_machine(clients[targetID]["password"], clients[targetID]["salt"])
-                            sv.CHAT_STARTED(target_socket, message["username"], sessionID, target_machine)
+                            sv.CHAT_STARTED(target_socket, message["username"], sessionID, target_machine, chat_history)
                             
                             # start timer thread
                             timer_thread = threading.Thread(target=sv.TIMEOUT, args=(sessionID, online_sessionIDs, lock, connected_pair, senderID, sender_socket, target_socket, machine, target_machine))
@@ -171,14 +192,14 @@ if __name__ == "__main__":
                         sv.UNREACHABLE(response_socket, message["target_username"], machine)
                 elif message["message_type"] == "END_REQUEST":
                     senderID = message["senderID"]
-                    targetID = utils.username_to_ID(clients, message["target_username"])
+                    targetID = utils.find_userID(clients, message["target_username"])
                     sessionID = message["sessionID"]
                     sv.CLOSE(senderID, targetID, sessionID, online_sessionIDs, lock, connected_pair, clients, inputs, online_clientIDs)                    
                     
                     continue
                 elif message["message_type"] == "LOG_OFF_REQUEST":
                     senderID = message["senderID"]
-                    targetID = utils.username_to_ID(clients, message["target_username"])
+                    targetID = utils.find_userID(clients, message["target_username"])
                     socket_index = online_clientIDs.index(senderID)
                     response_socket = inputs[socket_index + 2]
                     sv.LOG_OFF_NOTIF(response_socket, machine)
@@ -199,12 +220,13 @@ if __name__ == "__main__":
                 elif message["message_type"] == "CHAT":
                     # construct message and add to message queue
                     outgoing_message = utils.messageDict(
+                        message_type="CHAT",
                         senderID=message["senderID"],
-                        targetID=utils.username_to_ID(clients, message["target_username"]),
+                        username=message["username"],
+                        targetID=utils.find_userID(clients, message["target_username"]),
                         target_username=message["target_username"],
                         sessionID=message["sessionID"],
-                        message_type="CHAT",
-                        message_body=message["message_body"],
+                        message_body=message["message_body"]
                     )
                     message_queues[s].put(outgoing_message)
 
@@ -231,13 +253,22 @@ if __name__ == "__main__":
                 else:
                     target = online_clientIDs.index(client_pair[0][0])
                 
+                # add message to session chat history in database
+                message_body = f"> {next_message['username']}: {next_message['message_body']}"
+                sessions = database["sessions"]
+                chat_sessions = db.get_sessions(database)
+                current_session = chat_sessions[message["sessionID"]]
+                chat_history = current_session["history"][-9:]
+                chat_history.append(message_body)
+                sessions.update_one({"_id": ObjectId(message["sessionID"])}, {"$set": {"history": chat_history}})
+
                 # encrypt message and send
                 targetID = next_message["targetID"]
                 machine = create_machine(clients[targetID]["password"], clients[targetID]["salt"])
                 unencrypted_bytes = pickle.dumps(next_message)
                 encrypted_bytes = machine.encrypt_message(unencrypted_bytes)
                 inputs[target + 2].send(encrypted_bytes)
-                
+
                 utils.terminal_print(f"Session {message['sessionID']}: sending [{next_message['message_body']}] to {next_message['target_username']}")
 
                 # reset timeout
@@ -247,7 +278,7 @@ if __name__ == "__main__":
 
                 utils.terminal_print("\nMessage sent - reset timer\n", "info")
         for s in exceptional: # handle errors - close socket if error (not used right now)
-            print("handleing error")
+            print("handling error")
             inputs.remove(s)
             if s in outputs:
                 outputs.remove(s)

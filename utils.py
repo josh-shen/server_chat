@@ -6,32 +6,31 @@ PRIVATE_ADDRESS = 'localhost'   # server internal IP address, use 'localhost' fo
 SERVER_ADDRESS = 'localhost'    # server external IP address, use 'localhost' for testing
 session_timeouts = {}
 
-def messageDict(message_type, senderID, username=None, message_body=None, targetID=None, target_username=None, cookie=None, sessionID=None):
+def messageDict(message_type, senderID, username=None, targetID=None, target_username=None, sessionID=None, message_body=None, cookie=None):
     return { 
         "message_type": message_type,
         "senderID": senderID,
         "username": username,
-        "message_body": message_body,
         "targetID": targetID,
         "target_username": target_username,
+        "sessionID": sessionID,
+        "message_body": message_body,
         "cookie": cookie,
-        "sessionID": sessionID
     }
-        
-def gen_sessionID(existing_sessionIDs):
-    while True:
-        i = uuid4().int
-        mask = "0b111111111111111111111111111111111111111111111111111111111111111"
-        i = i & int(mask, 2)
-        if i not in existing_sessionIDs:
-            return i
 
-def username_to_ID(db, username):
+def find_sessionID(sessions, user1, user2):
+    for _id, session in sessions.items():
+        if user1 in session.values() and user2 in session.values():
+            return _id
+    
+    return None
+
+def find_userID(db, username):
     for n in db:
         if db[n]["username"] == username:
             return n
     
-    return None # TODO error handling when this function returns None
+    return None
 
 def terminal_print(message, type = None):
     if type == "error":
