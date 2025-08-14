@@ -1,9 +1,11 @@
 from pymongo import MongoClient
 from pymongo.server_api import ServerApi
+from bson.objectid import ObjectId
+
 import utils
 
 def get_database():
-    CONNECTION_STRING = ""
+    CONNECTION_STRING = "mongodb+srv://joshausneh:ZT6XdqCnk7Diq0eZ@server-chat.bpryr3d.mongodb.net/?retryWrites=true&w=majority&appName=server-chat"
 
     client = MongoClient(CONNECTION_STRING, server_api=ServerApi('1'))
 
@@ -16,37 +18,5 @@ def get_database():
 
     return client["server"]
 
-def get_users(database):
-    clients = {}
-    users = database["users"]
-    item_details = users.find()
-
-    for item in item_details:
-        user = {
-            "username": item["username"],
-            "password": item["password"],
-            "salt": None,
-            "salted_password": None,
-            "port": None,
-            "cookie": None,
-            "socket": None,
-        }
-        clients[str(item["_id"])] = user
-    
-    return clients
-
-def get_sessions(database):
-    chat_sessions = {}
-    sessions = database["sessions"]
-    item_details = sessions.find()
-
-    for item in item_details:
-        session = {
-            "user1": item["user1"],
-            "user2": item["user2"],
-            "history": item["history"]
-        }
-        chat_sessions[str(item["_id"])] = session
-    
-    return chat_sessions
-
+def get_document(database, filter):
+    return database.find_one(filter)

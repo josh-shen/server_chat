@@ -1,5 +1,4 @@
 import os
-from uuid import uuid4
 
 TIMEOUT_VAL = 60
 PRIVATE_ADDRESS = 'localhost'   # server internal IP address, use 'localhost' for testing
@@ -17,20 +16,6 @@ def messageDict(message_type, senderID, username=None, targetID=None, target_use
         "message_body": message_body,
         "cookie": cookie,
     }
-
-def find_sessionID(sessions, user1, user2):
-    for _id, session in sessions.items():
-        if user1 in session.values() and user2 in session.values():
-            return _id
-    
-    return None
-
-def find_userID(db, username):
-    for n in db:
-        if db[n]["username"] == username:
-            return n
-    
-    return None
 
 def terminal_print(message, type = None):
     if type == "error":

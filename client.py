@@ -1,11 +1,20 @@
-import pickle, socket, sys, time, threading
+import pickle, socket, sys, time, threading, os
+from Crypto.PublicKey import ECC
+from Crypto.Protocol.DH import key_agreement
+from Crypto.Hash import TupleHash128
 
 from aes import aes_cipher, create_machine
-from utils import messageDict, terminal_print, clear_line, clear_screen
+from utils import terminal_print, clear_line, clear_screen
 import client_functions as cl
 
 # message receive thread (from either server or another client)
 def msg_recv(machine: aes_cipher):
+    global target_username
+    global targetID
+    global sessionID
+    global shared_key
+    global message_machine
+
     while True:
         encrypted_bytes = client_socket.tcp_client.recv(65536)
 
@@ -16,18 +25,46 @@ def msg_recv(machine: aes_cipher):
         decrypted_bytes = machine.decrypt_message(encrypted_bytes)
         message = pickle.loads(decrypted_bytes)
 
-        if message["message_type"] == "CHAT_STARTED":
-            global target_username
+        if message["message_type"] == "CHAT_INIT":
+            session_salt = message["message_body"]
+            targetID = message["targetID"]
             target_username = message["target_username"]
-            
-            global sessionID 
             sessionID = message["sessionID"] 
+
+            # send back public key to server
+            public_key = my_key.public_key()
+            public_pem = public_key.export_key(format='PEM')
+            client_socket.CHAT_RESPONSE(targetID, target_username, sessionID, machine, public_pem)
+            continue 
+        elif message["message_type"] == "CHAT_STARTED":
+            
+            def kdf(x):
+                h = TupleHash128.new(digest_bytes=32)
+                h.update(
+                        x,
+                        session_salt,
+                        b'Email encryption',
+                        b'TupleHash128',
+                        b'AES256')
+                return h.digest()
+            
+            target_username = message["target_username"]
+
+            # create shared key with target's public key
+            their_key = message["message_body"]["key"]
+            their_key = ECC.import_key(their_key)
+            #global shared_key
+            shared_key = key_agreement(static_priv=my_key, static_pub=their_key, kdf=kdf)
+            #global message_machine
+            message_machine = create_machine(shared_key, session_salt)
 
             # display chat history
             history = message["message_body"]["body"]
             for n in history:
-                terminal_print(n, "info")
-
+                client, encrypted_bytes = n.popitem()
+                decrypted_message = message_machine.decrypt_message(encrypted_bytes).decode("utf-8")
+                terminal_print(f"> {client}: {decrypted_message}", "info")          
+            
             message["message_body"] = message["message_body"]["server_message"]
         elif message["message_type"] == "UNREACHABLE":
             target_username = None
@@ -49,6 +86,11 @@ def msg_recv(machine: aes_cipher):
         # display received message
         message_type = message["senderID"]
         identifier = message["username"] if "SERVER" not in message["senderID"] else "SERVER"
+        # decrypt message body from client with shared key
+        if identifier != "SERVER":
+            decrypted_bytes = message_machine.decrypt_message(message["message_body"])
+            message['message_body'] = decrypted_bytes.decode("utf-8")
+
         recv_message = f"> {identifier}: {message['message_body'] if message['message_body'] is not None else 'None'}"
         
         if (message_type == "SERVER_ERROR"):
@@ -64,12 +106,16 @@ if __name__ == "__main__":
     # connection variables
     connect_type = 0
     reply = None
+    targetID = None
     target_username = None
     sessionID = None
 
     # client credentials
     USERNAME = ""
     PASSWORD = ""
+
+    shared_key = None
+    message_machine = None
 
     while True:
         # connect type 0 - not connected to server
@@ -118,6 +164,15 @@ if __name__ == "__main__":
                     
                     recv_thread = threading.Thread(target = msg_recv, args = (machine,))
                     recv_thread.start()
+
+                    if os.path.exists(f"{USERNAME}.pem"):
+                        # load key from file
+                        my_key = ECC.import_key(open(f"{USERNAME}.pem", "rb").read())
+                    else:
+                        with open(f"{USERNAME}.pem", "wt") as f:
+                            my_key = ECC.generate(curve='p256')
+                            data = my_key.export_key(format='PEM')
+                            f.write(data)
                 elif reply != [] and reply[0] == "AUTH_FAIL":
                     reply = None
                     client_socket.udp_client.close()
@@ -157,16 +212,16 @@ if __name__ == "__main__":
             if message_input.split()[0] == "chat":
                 target_username = message_input.split()[1]
                 client_socket.CHAT_REQUEST(target_username, machine)
-            elif target_username != None and sessionID != None and message_input == "end chat":
-                client_socket.END_REQUEST(target_username, sessionID, machine)
+            elif targetID != None and sessionID != None and message_input == "end chat":
+                client_socket.END_REQUEST(targetID, target_username, sessionID, machine)
             elif message_input == "logoff":
-                client_socket.LOG_OFF_REQUEST(target_username, sessionID, machine)
+                client_socket.LOG_OFF_REQUEST(targetID, target_username, sessionID, machine)
 
                 # reset connection variables
                 reply = None
                 connect_type = 0
-            elif target_username != None and sessionID != None:
-                client_socket.CHAT(message_input, target_username, sessionID, machine)
+            elif targetID != None and sessionID != None:
+                client_socket.CHAT(message_input, targetID, target_username, sessionID, machine, message_machine)
             else:
                 terminal_print("Invalid input. If you are trying to send a message, you are not currently connected to a chat session.", "error")
         else:

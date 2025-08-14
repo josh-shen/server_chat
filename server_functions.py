@@ -1,4 +1,5 @@
 import pickle, time
+from bson.objectid import ObjectId
 
 from utils import messageDict, session_timeouts, TIMEOUT_VAL, terminal_print
 from aes import create_machine
@@ -29,13 +30,19 @@ def CONNECTED(socket, machine):
     encrypted_bytes = machine.encrypt_message(unencrypted_bytes)
     socket.send(encrypted_bytes)
 
-def CHAT_STARTED (socket, target_client_username, sessionID, machine, history):
+def CHAT_INIT(socket, machine, targetID, target_username, sessionID, session_salt):
+    message = messageDict(message_type="CHAT_INIT", senderID="SERVER", targetID=targetID, target_username=target_username, sessionID=sessionID, message_body=session_salt)
+    unencrypted_bytes = pickle.dumps(message)
+    encrypted_bytes = machine.encrypt_message(unencrypted_bytes)
+    socket.send(encrypted_bytes)
+
+def CHAT_STARTED (socket, target_client_username, sessionID, machine, history, key):
     server_message = f"connected to client [{target_client_username}]"
-    body = {"server_message": server_message, "body": history}
+    body = {"server_message": server_message, "key": key, "body": history}
     message = messageDict(message_type="CHAT_STARTED", senderID="SERVER", target_username=target_client_username, sessionID=sessionID, message_body=body)
-    pickleMessage = pickle.dumps(message)
-    encMessage = machine.encrypt_message(pickleMessage) 
-    socket.send(encMessage)   
+    unencrypted_bytes = pickle.dumps(message)
+    encrypted_bytes = machine.encrypt_message(unencrypted_bytes) 
+    socket.send(encrypted_bytes)   
 
 def UNREACHABLE(socket, target_client_username, machine):
     body = f"client [{target_client_username}] is unreachable"
@@ -46,14 +53,14 @@ def UNREACHABLE(socket, target_client_username, machine):
 
 def END_NOTIF(socket, machine):
     body = "session has been terminated"
-    message = messageDict(message_type = "END_NOTIF", senderID = "SERVER_ERROR", message_body = body)
+    message = messageDict(message_type="END_NOTIF", senderID="SERVER_ERROR", message_body = body)
     unencrypted_bytes = pickle.dumps(message)
     encrypted_bytes = machine.encrypt_message(unencrypted_bytes)
     socket.send(encrypted_bytes)
 
 def TIMEOUT_WARNING(socket, machine):
     body = "chat is disconnecting in 15 seconds, send a message to reset the timer"
-    message = messageDict(message_type = "TIMEOUT_WARN", senderID = "SERVER", message_body = body)
+    message = messageDict(message_type="TIMEOUT_WARN", senderID="SERVER", message_body = body)
     unencrypted_bytes = pickle.dumps(message)
     encrypted_bytes = machine.encrypt_message(unencrypted_bytes)
     socket.send(encrypted_bytes)
@@ -64,7 +71,7 @@ def LOG_OFF_NOTIF(socket, machine):
     encrypted_bytes = machine.encrypt_message(unencrypted_bytes)
     socket.send(encrypted_bytes)
 
-def TIMEOUT(session, sessionIDs, lock, connected_pair, client, socket1, socket2, machine1, machine2):
+def TIMEOUT(session, sessionIDs, lock, connected_pair, online_clients, clientID, socket1, socket2, machine1, machine2):
     terminal_print(f"\nTimeout thread started for session {session}\n", "info")
     
     timeout = False
@@ -103,10 +110,13 @@ def TIMEOUT(session, sessionIDs, lock, connected_pair, client, socket1, socket2,
         client_pair = [
             tuple_elem
             for tuple_elem in connected_pair
-            if tuple_elem[0] == client or tuple_elem[1] == client
+            if tuple_elem[0] == clientID or tuple_elem[1] == clientID
         ]
 
         if client_pair:
+            del online_clients[client_pair[0][0]]["public_key"]
+            del online_clients[client_pair[0][1]]["public_key"]
+
             connected_pair.remove(client_pair[0])
         # remove session
         lock.acquire()
@@ -118,13 +128,13 @@ def TIMEOUT(session, sessionIDs, lock, connected_pair, client, socket1, socket2,
 
         terminal_print(f"Session {session} timed out\n", "error")
 
-def DISCONNECT(connectionID, clients, inputs, online_clientIDs):
-    socket_index = online_clientIDs.index(connectionID)
-    response_socket = inputs[socket_index + 2]
-    machine = create_machine(clients[connectionID]["password"], clients[connectionID]["salt"])
+def DISCONNECT(connectionID, client, inputs, online_clients):
+    socket_index = online_clients[connectionID]["index"]
+    response_socket = inputs[socket_index]
+    machine = create_machine(client["password"], online_clients[connectionID]["salt"])
     END_NOTIF(response_socket, machine)
 
-def CLOSE(senderID, targetID, sessionID, online_sessionIDs, lock, connected_pair, clients, inputs, online_clientIDs):
+def CLOSE(senderID, targetID, sessionID, online_sessionIDs, database, lock, connected_pair, inputs, online_clients):
     client_pair = [
         tupleElem for tupleElem in connected_pair 
         if tupleElem[0] == senderID 
@@ -137,10 +147,16 @@ def CLOSE(senderID, targetID, sessionID, online_sessionIDs, lock, connected_pair
         session_timeouts[sessionID] = 0
         lock.release()
 
+        del online_clients[senderID]["public_key"]
+        del online_clients[targetID]["public_key"]
+        
         connected_pair.remove(client_pair[0])
         online_sessionIDs.remove(sessionID)
 
-        DISCONNECT(senderID, clients, inputs, online_clientIDs)
-        DISCONNECT(targetID, clients, inputs, online_clientIDs)
+        client = database["users"].find_one({"_id": ObjectId(senderID)})
+        target_client = database["users"].find_one({"_id": ObjectId(targetID)})
+        
+        DISCONNECT(senderID, client, inputs, online_clients)
+        DISCONNECT(targetID, target_client, inputs, online_clients)
 
         terminal_print(f"\nSession {sessionID} removed\n", "info")

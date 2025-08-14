@@ -27,16 +27,14 @@ if __name__ == "__main__":
 
     # connection varaibles
     address_to_ID = {}
-    online_clientIDs = []
-    online_client_sockets = []
+    online_clients = {}
     connected_pair = []
     message_queues = {}
     online_sessionIDs = []
 
-    # user database query
+    # database query
     database = db.get_database()
-    clients = db.get_users(database)
-
+    
     # bind UDP socket
     try:
         udp_socket.bind((INTERNAL_HOST, PORT))
@@ -65,35 +63,47 @@ if __name__ == "__main__":
 
                 if data[0] == "HELLO":
                     client_username = data[1]
-                    clientID = utils.find_userID(clients, client_username)
+
+                    client = db.get_document(database["users"], {"username": client_username})
 
                     # client does not exist
-                    if not clientID:
+                    if not client:
                         sv.AUTH_FAIL(udp_socket, addr)
                         continue
+
+                    clientID = str(client["_id"])
+
                     # client is already logged on
-                    if clientID in online_clientIDs:
+                    if clientID in online_clients:
                         sv.AUTH_FAIL(udp_socket, addr)
                         continue
 
                     address_to_ID[addr] = clientID
 
                     # start auth challenge for client
-                    password = clients[clientID]["password"]
-                    salt = clients[clientID]["salt"] = bcrypt.gensalt()
-                    clients[clientID]["salted_password"] = bcrypt.hashpw(str(password).encode(), salt)
+                    # TODO: do not store password in plaintext
+                    password = client["password"] 
+                    salt = bcrypt.gensalt()
+
+                    # create online client entry
+                    online_clients[clientID] = {}
+                    online_clients[clientID]["salt"] = salt
+                    online_clients[clientID]["salted_password"] = bcrypt.hashpw(str(password).encode(), salt)
                     sv.CHALLENGE(udp_socket, addr, salt)
                 if data[0] == "RESPONSE":
                     salted_password = data[1]
                     clientID = address_to_ID[addr]
+                    client = db.get_document(database["users"], {"_id": ObjectId(clientID)})
 
-                    if clients[clientID]["salted_password"] == salted_password.encode():
+                    if online_clients[clientID]["salted_password"] == salted_password.encode():
                         # authentication success, generate cookie to give to client
-                        cookie = clients[clientID]["cookie"] = token_urlsafe(16)
-                        password = clients[clientID]["password"]
-                        salt = clients[clientID]["salt"]
+                        cookie = online_clients[clientID]["cookie"] = token_urlsafe(16)
+                        password = client["password"] #clients[clientID]["password"]
+                        salt = online_clients[clientID]["salt"]
                         sv.AUTH_SUCCESS(udp_socket, addr, clientID, cookie, password, salt, PORT, EXTERNAL_HOST)
                     else:
+                        # authentication failed, remove client from online list
+                        del online_clients[clientID]
                         sv.AUTH_FAIL(udp_socket, addr)
             elif s is tcp_socket:
                 # establish TCP connection with client
@@ -103,7 +113,6 @@ if __name__ == "__main__":
 
                 connection.setblocking(0) # non-blocking
                 inputs.append(connection)
-                online_client_sockets.append(connection)
                 message_queues[connection] = queue.Queue()
             else:
                 id_encrypted_bytes = s.recv(65536) # 2^16 bytes
@@ -111,10 +120,12 @@ if __name__ == "__main__":
                     # invalid message
                     continue
                 
-                # decrypt received message - from here all messages will be encrypted
                 id = id_encrypted_bytes[:24].decode("utf-8")
+                client = db.get_document(database["users"], {"_id": ObjectId(id)})
+
+                # decrypt received message - from here all messages will be encrypted
                 encrypted_bytes = id_encrypted_bytes[24:]
-                machine = create_machine(clients[id]["password"], clients[id]["salt"])
+                machine = create_machine(client["password"], online_clients[id]["salt"])
                 decrypted_bytes = machine.decrypt_message(encrypted_bytes)
                 message = pickle.loads(decrypted_bytes)
 
@@ -122,10 +133,10 @@ if __name__ == "__main__":
 
                 if message["message_type"] == "CONNECT":
                     # verify authentication with cookie, add client to list of online clients
-                    if clients[id]["cookie"] == message["cookie"]:
+                    if online_clients[id]["cookie"] == message["cookie"]:
                         connected_clientID = message["senderID"]
-                        online_clientIDs.append(connected_clientID)
-                        clients[connected_clientID]["socket"] = s
+                        online_clients[connected_clientID]["index"] = len(inputs) - 1  # index in inputs list
+                        online_clients[connected_clientID]["socket"] = s 
                         sv.CONNECTED(s, machine)
                     else:
                         # authentication failed - cookie mismatch
@@ -133,11 +144,21 @@ if __name__ == "__main__":
                     continue
                 elif message["message_type"] == "CHAT_REQUEST":
                     senderID = message["senderID"]
-                    targetID = utils.find_userID(clients, message["target_username"])
-                    
+
+                    target_client = db.get_document(database["users"], {"username": message["target_username"]})
+
+                    if not target_client:
+                        # client does not exist
+                        senderID = message["senderID"]
+                        socket_index = online_clients[senderID]["index"]
+                        response_socket = inputs[socket_index]
+                        sv.UNREACHABLE(response_socket, message["target_username"], machine)
+                        continue
+
+                    targetID = str(target_client["_id"])
+
                     # check if target client is online
-                    online = targetID in online_clientIDs
-                    if online:
+                    if targetID in online_clients:
                         # check if target is already in a chat, check if targetID is not same as senderID
                         paired = [
                             tuple_elem
@@ -150,76 +171,113 @@ if __name__ == "__main__":
                             connected_pair.append(tuple((senderID, targetID)))
 
                             # check if session exists in database
-                            chat_sessions = db.get_sessions(database)
-                            sessionID = utils.find_sessionID(chat_sessions, senderID, targetID)
-
-                            if not sessionID:
-                                # first time chatting, create session ID and add to database
-                                session = {
+                            session = db.get_document(database["sessions"], {"$or": [
+                                {"user1": senderID, "user2": targetID},
+                                {"user1": targetID, "user2": senderID}
+                            ]})
+                            
+                            # first time chatting, create session ID and add to database
+                            if not session:                      
+                                session_salt = bcrypt.gensalt()
+                                s = {
                                     "user1": senderID,
                                     "user2": targetID,
+                                    "clients": [senderID, targetID],
+                                    "salt": session_salt,
                                     "history": []
                                 }
 
-                                res = database["sessions"].insert_one(session)
-                                sessionID = res.inserted_id
+                                res = database["sessions"].insert_one(s)
+                                sessionID = str(res.inserted_id)
+                            else:
+                                sessionID = str(session["_id"])
+                                session_salt = session["salt"]                            
 
                             lock.acquire()
                             online_sessionIDs.append(sessionID)
                             lock.release()
 
-                            chat_history = chat_sessions[sessionID]["history"]       
+                            # send chat init message to both clients
+                            socket_index = online_clients[senderID]["index"]
+                            sender_socket = inputs[socket_index]
+                            sv.CHAT_INIT(sender_socket, machine, targetID, message["target_username"], sessionID, session_salt)
 
-                            # find sockets and notify both clients of chat connection
-                            socket_index = online_clientIDs.index(senderID)
-                            sender_socket = inputs[socket_index + 2]  # +2 to account for server udp and tcp socket
-                            sv.CHAT_STARTED(sender_socket, message["target_username"], sessionID, machine, chat_history)
-
-                            socket_index = online_clientIDs.index(targetID)
-                            target_socket = inputs[socket_index + 2]
-                            target_machine = create_machine(clients[targetID]["password"], clients[targetID]["salt"])
-                            sv.CHAT_STARTED(target_socket, message["username"], sessionID, target_machine, chat_history)
-                            
-                            # start timer thread
-                            timer_thread = threading.Thread(target=sv.TIMEOUT, args=(sessionID, online_sessionIDs, lock, connected_pair, senderID, sender_socket, target_socket, machine, target_machine))
-                            timer_thread.start()
+                            socket_index = online_clients[targetID]["index"]
+                            target_socket = inputs[socket_index]
+                            target_machine = create_machine(target_client["password"], online_clients[targetID]["salt"])
+                            sv.CHAT_INIT(target_socket, target_machine, senderID, message["username"], sessionID, session_salt)
                         else:
                             # target is already in a chat, or target is same as sender
                             senderID = message["senderID"]
-                            socket_index = online_clientIDs.index(senderID)
-                            response_socket = inputs[socket_index + 2]
+                            socket_index = online_clients[senderID]["index"]
+                            response_socket = inputs[socket_index]
                             sv.UNREACHABLE(response_socket, message["target_username"], machine)
                     else:
                         # target client is not online
                         senderID = message["senderID"]
-                        socket_index = online_clientIDs.index(senderID)
-                        response_socket = inputs[socket_index + 2]
+                        socket_index = online_clients[senderID]["index"]
+                        response_socket = inputs[socket_index]
                         sv.UNREACHABLE(response_socket, message["target_username"], machine)
+                elif message["message_type"] == "CHAT_RESPONSE":
+                    senderID = message["senderID"]
+                    targetID = message["targetID"]
+                    target_client = db.get_document(database["users"], {"username": message["target_username"]})
+
+                    key = message["message_body"]
+                    online_clients[senderID]["public_key"] = key
+
+                    # wait for both clients to exchange keys
+                    if "public_key" not in online_clients[targetID]:
+                        continue
+                    
+                    session = db.get_document(database["sessions"], {"_id": ObjectId(message["sessionID"])})
+                    chat_history = session["history"]       
+
+                    # find sockets, exchange public keys, notify both clients of chat connection
+                    socket_index = online_clients[senderID]["index"]
+                    sender_socket = inputs[socket_index]
+                    sv.CHAT_STARTED(sender_socket, message["target_username"], sessionID, machine, chat_history, online_clients[targetID]["public_key"])
+
+                    socket_index = online_clients[targetID]["index"]
+                    target_socket = inputs[socket_index]
+                    target_machine = create_machine(target_client["password"], online_clients[targetID]["salt"])
+                    sv.CHAT_STARTED(target_socket, message["username"], sessionID, target_machine, chat_history, online_clients[senderID]["public_key"])
+                    
+                    # start timer thread
+                    timer_thread = threading.Thread(target=sv.TIMEOUT, args=(sessionID, online_sessionIDs, lock, connected_pair, online_clients, senderID, sender_socket, target_socket, machine, target_machine))
+                    timer_thread.start()
                 elif message["message_type"] == "END_REQUEST":
                     senderID = message["senderID"]
-                    targetID = utils.find_userID(clients, message["target_username"])
+                    targetID = message["targetID"]
                     sessionID = message["sessionID"]
-                    sv.CLOSE(senderID, targetID, sessionID, online_sessionIDs, lock, connected_pair, clients, inputs, online_clientIDs)                    
-                    
+                    sv.CLOSE(senderID, targetID, sessionID, online_sessionIDs, database, lock, connected_pair, inputs, online_clients) 
                     continue
                 elif message["message_type"] == "LOG_OFF_REQUEST":
                     senderID = message["senderID"]
-                    targetID = utils.find_userID(clients, message["target_username"])
-                    socket_index = online_clientIDs.index(senderID)
-                    response_socket = inputs[socket_index + 2]
+                    targetID = message["targetID"]
+                    socket_index = online_clients[senderID]["index"]
+                    response_socket = inputs[socket_index]
                     sv.LOG_OFF_NOTIF(response_socket, machine)
 
                     # if logging off from a chat session, end the chat session
                     if message["sessionID"] != None:
-                        sv.CLOSE(senderID, targetID, sessionID, online_sessionIDs, lock, connected_pair, clients, inputs, online_clientIDs)                    
+                        sv.CLOSE(senderID, targetID, message["sessionID"], online_sessionIDs, database, lock, connected_pair, inputs, online_clients)                    
                     
                     # end TCP connection
-                    online_clientIDs.remove(senderID)
-                    socket = clients[senderID]["socket"]
-                    if socket in inputs:
-                        inputs.remove(socket)
-                    if socket in outputs:
-                        outputs.remove(socket)
+                    client_socket = online_clients[senderID]["socket"]
+                    if client_socket in inputs:
+                        index = inputs.index(client_socket)
+                        inputs.remove(client_socket)
+                        # TODO: when client socket is removed from inputs, other client's saved socket indexes are no longer correct
+                        
+                        # update socket index for all other clients
+                        other_clients = {id: client for id, client in online_clients.items() if client["index"] > index}
+                        for id in other_clients:
+                            other_clients[id]["index"] -= 1
+                    if client_socket in outputs:
+                        outputs.remove(client_socket)
+
+                    del online_clients[senderID]
                     
                     continue
                 elif message["message_type"] == "CHAT":
@@ -228,7 +286,7 @@ if __name__ == "__main__":
                         message_type="CHAT",
                         senderID=message["senderID"],
                         username=message["username"],
-                        targetID=utils.find_userID(clients, message["target_username"]),
+                        targetID=message["targetID"],
                         target_username=message["target_username"],
                         sessionID=message["sessionID"],
                         message_body=message["message_body"]
@@ -243,9 +301,6 @@ if __name__ == "__main__":
             except queue.Empty:
                 outputs.remove(s)
             else:
-                senderID = next_message["senderID"]
-                next_message["username"] = clients[senderID]["username"]
-
                 client_pair = [
                     tupleElem for tupleElem in connected_pair
                     if tupleElem[0] == next_message["senderID"]
@@ -253,26 +308,26 @@ if __name__ == "__main__":
                 ]
 
                 # find target client in connected pair
-                if client_pair[0][0] == senderID:
-                    target = online_clientIDs.index(client_pair[0][1])
+                if client_pair[0][0] == next_message["senderID"]:
+                    target = online_clients[client_pair[0][1]]["index"]
                 else:
-                    target = online_clientIDs.index(client_pair[0][0])
+                    target = online_clients[client_pair[0][0]]["index"]
                 
                 # add message to session chat history in database
-                message_body = f"> {next_message['username']}: {next_message['message_body']}"
-                sessions = database["sessions"]
-                chat_sessions = db.get_sessions(database)
-                current_session = chat_sessions[message["sessionID"]]
-                chat_history = current_session["history"][-9:]
+                message_body = {next_message['username']: next_message['message_body'].decode("utf-8")}
+                session = db.get_document(database["sessions"], {"_id": ObjectId(message["sessionID"])})
+                chat_history = session["history"][-9:]
                 chat_history.append(message_body)
-                sessions.update_one({"_id": ObjectId(message["sessionID"])}, {"$set": {"history": chat_history}})
+                database["sessions"].update_one({"_id": ObjectId(message["sessionID"])}, {"$set": {"history": chat_history}})
+
+                targetID = next_message["targetID"]
+                target_client = db.get_document(database["users"], {"_id": ObjectId(targetID)})
 
                 # encrypt message and send
-                targetID = next_message["targetID"]
-                machine = create_machine(clients[targetID]["password"], clients[targetID]["salt"])
+                machine = create_machine(target_client["password"], online_clients[targetID]["salt"])
                 unencrypted_bytes = pickle.dumps(next_message)
                 encrypted_bytes = machine.encrypt_message(unencrypted_bytes)
-                inputs[target + 2].send(encrypted_bytes)
+                inputs[target].send(encrypted_bytes)
 
                 utils.terminal_print(f"Session {message['sessionID']}: sending [{next_message['message_body']}] to {next_message['target_username']}")
 
