@@ -34,7 +34,7 @@ def msg_recv(machine: aes_cipher):
             # send back public key to server
             public_key = my_key.public_key()
             public_pem = public_key.export_key(format='PEM')
-            client_socket.CHAT_RESPONSE(targetID, target_username, sessionID, machine, public_pem)
+            client_socket.CHAT_RESPONSE(machine, targetID, target_username, sessionID, public_pem)
             continue 
         elif message["message_type"] == "CHAT_STARTED":
             
@@ -69,12 +69,16 @@ def msg_recv(machine: aes_cipher):
         elif message["message_type"] == "UNREACHABLE":
             target_username = None
         elif message["message_type"] == "END_NOTIF":
+            targetID = None
             target_username = None
             sessionID = None
+            shared_key = None
         elif message["message_type"] == "LOG_OFF_NOTIF":
             # clear target username and session ID if still in a chat session
+            targetID = None
             target_username = None
             sessionID = None
+            shared_key = None
 
             # close sockets and exit thread
             client_socket.tcp_client.close()
@@ -109,10 +113,6 @@ if __name__ == "__main__":
     targetID = None
     target_username = None
     sessionID = None
-
-    # client credentials
-    USERNAME = ""
-    PASSWORD = ""
 
     shared_key = None
     message_machine = None
@@ -209,19 +209,19 @@ if __name__ == "__main__":
 
             terminal_print(f"> {message_input}")
 
-            if message_input.split()[0] == "chat":
+            if message_input.split()[0] == "chat" and len(message_input.split()) == 2:
                 target_username = message_input.split()[1]
-                client_socket.CHAT_REQUEST(target_username, machine)
+                client_socket.CHAT_REQUEST(machine, target_username)
             elif targetID != None and sessionID != None and message_input == "end chat":
-                client_socket.END_REQUEST(targetID, target_username, sessionID, machine)
+                client_socket.END_REQUEST(machine, targetID, target_username, sessionID)
             elif message_input == "logoff":
-                client_socket.LOG_OFF_REQUEST(targetID, target_username, sessionID, machine)
+                client_socket.LOG_OFF_REQUEST(machine, targetID, target_username, sessionID)
 
                 # reset connection variables
                 reply = None
                 connect_type = 0
             elif targetID != None and sessionID != None:
-                client_socket.CHAT(message_input, targetID, target_username, sessionID, machine, message_machine)
+                client_socket.CHAT(machine, message_machine, targetID, target_username, sessionID, message_input)
             else:
                 terminal_print("Invalid input. If you are trying to send a message, you are not currently connected to a chat session.", "error")
         else:

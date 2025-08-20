@@ -86,9 +86,11 @@ if __name__ == "__main__":
                     salt = bcrypt.gensalt()
 
                     # create online client entry
+                    lock.acquire()
                     online_clients[clientID] = {}
                     online_clients[clientID]["salt"] = salt
                     online_clients[clientID]["salted_password"] = bcrypt.hashpw(str(password).encode(), salt)
+                    lock.release()
                     sv.CHALLENGE(udp_socket, addr, salt)
                 if data[0] == "RESPONSE":
                     salted_password = data[1]
@@ -100,10 +102,12 @@ if __name__ == "__main__":
                         cookie = online_clients[clientID]["cookie"] = token_urlsafe(16)
                         password = client["password"] #clients[clientID]["password"]
                         salt = online_clients[clientID]["salt"]
-                        sv.AUTH_SUCCESS(udp_socket, addr, clientID, cookie, password, salt, PORT, EXTERNAL_HOST)
+                        sv.AUTH_SUCCESS(udp_socket, addr, clientID, cookie, PORT, EXTERNAL_HOST, password, salt)
                     else:
                         # authentication failed, remove client from online list
+                        lock.acquire()
                         del online_clients[clientID]
+                        lock.release()
                         sv.AUTH_FAIL(udp_socket, addr)
             elif s is tcp_socket:
                 # establish TCP connection with client
@@ -135,8 +139,10 @@ if __name__ == "__main__":
                     # verify authentication with cookie, add client to list of online clients
                     if online_clients[id]["cookie"] == message["cookie"]:
                         connected_clientID = message["senderID"]
+                        lock.acquire()
                         online_clients[connected_clientID]["index"] = len(inputs) - 1  # index in inputs list
                         online_clients[connected_clientID]["socket"] = s 
+                        lock.release()
                         sv.CONNECTED(s, machine)
                     else:
                         # authentication failed - cookie mismatch
@@ -152,7 +158,7 @@ if __name__ == "__main__":
                         senderID = message["senderID"]
                         socket_index = online_clients[senderID]["index"]
                         response_socket = inputs[socket_index]
-                        sv.UNREACHABLE(response_socket, message["target_username"], machine)
+                        sv.UNREACHABLE(response_socket, machine, message["target_username"])
                         continue
 
                     targetID = str(target_client["_id"])
@@ -168,7 +174,9 @@ if __name__ == "__main__":
 
                         if not paired and senderID != targetID:
                             # add clients to connected pair
+                            lock.acquire()
                             connected_pair.append(tuple((senderID, targetID)))
+                            lock.release()
 
                             # check if session exists in database
                             session = db.get_document(database["sessions"], {"$or": [
@@ -182,7 +190,6 @@ if __name__ == "__main__":
                                 s = {
                                     "user1": senderID,
                                     "user2": targetID,
-                                    "clients": [senderID, targetID],
                                     "salt": session_salt,
                                     "history": []
                                 }
@@ -211,20 +218,22 @@ if __name__ == "__main__":
                             senderID = message["senderID"]
                             socket_index = online_clients[senderID]["index"]
                             response_socket = inputs[socket_index]
-                            sv.UNREACHABLE(response_socket, message["target_username"], machine)
+                            sv.UNREACHABLE(response_socket, machine, message["target_username"])
                     else:
                         # target client is not online
                         senderID = message["senderID"]
                         socket_index = online_clients[senderID]["index"]
                         response_socket = inputs[socket_index]
-                        sv.UNREACHABLE(response_socket, message["target_username"], machine)
+                        sv.UNREACHABLE(response_socket, machine, message["target_username"])
                 elif message["message_type"] == "CHAT_RESPONSE":
                     senderID = message["senderID"]
                     targetID = message["targetID"]
                     target_client = db.get_document(database["users"], {"username": message["target_username"]})
 
                     key = message["message_body"]
+                    lock.acquire()
                     online_clients[senderID]["public_key"] = key
+                    lock.release()
 
                     # wait for both clients to exchange keys
                     if "public_key" not in online_clients[targetID]:
@@ -236,12 +245,12 @@ if __name__ == "__main__":
                     # find sockets, exchange public keys, notify both clients of chat connection
                     socket_index = online_clients[senderID]["index"]
                     sender_socket = inputs[socket_index]
-                    sv.CHAT_STARTED(sender_socket, message["target_username"], sessionID, machine, chat_history, online_clients[targetID]["public_key"])
+                    sv.CHAT_STARTED(sender_socket, machine, targetID, message["target_username"], sessionID, online_clients[targetID]["public_key"], chat_history)
 
                     socket_index = online_clients[targetID]["index"]
                     target_socket = inputs[socket_index]
                     target_machine = create_machine(target_client["password"], online_clients[targetID]["salt"])
-                    sv.CHAT_STARTED(target_socket, message["username"], sessionID, target_machine, chat_history, online_clients[senderID]["public_key"])
+                    sv.CHAT_STARTED(target_socket, target_machine, senderID, message["username"], sessionID, online_clients[senderID]["public_key"], chat_history)
                     
                     # start timer thread
                     timer_thread = threading.Thread(target=sv.TIMEOUT, args=(sessionID, online_sessionIDs, lock, connected_pair, online_clients, senderID, sender_socket, target_socket, machine, target_machine))
@@ -250,7 +259,7 @@ if __name__ == "__main__":
                     senderID = message["senderID"]
                     targetID = message["targetID"]
                     sessionID = message["sessionID"]
-                    sv.CLOSE(senderID, targetID, sessionID, online_sessionIDs, database, lock, connected_pair, inputs, online_clients) 
+                    sv.CLOSE(inputs, senderID, targetID, connected_pair, online_clients, sessionID, online_sessionIDs, database, lock) 
                     continue
                 elif message["message_type"] == "LOG_OFF_REQUEST":
                     senderID = message["senderID"]
@@ -261,14 +270,13 @@ if __name__ == "__main__":
 
                     # if logging off from a chat session, end the chat session
                     if message["sessionID"] != None:
-                        sv.CLOSE(senderID, targetID, message["sessionID"], online_sessionIDs, database, lock, connected_pair, inputs, online_clients)                    
+                        sv.CLOSE(inputs, senderID, targetID,  connected_pair, online_clients, message["sessionID"], online_sessionIDs, database, lock)                    
                     
                     # end TCP connection
                     client_socket = online_clients[senderID]["socket"]
                     if client_socket in inputs:
                         index = inputs.index(client_socket)
                         inputs.remove(client_socket)
-                        # TODO: when client socket is removed from inputs, other client's saved socket indexes are no longer correct
                         
                         # update socket index for all other clients
                         other_clients = {id: client for id, client in online_clients.items() if client["index"] > index}
@@ -277,7 +285,9 @@ if __name__ == "__main__":
                     if client_socket in outputs:
                         outputs.remove(client_socket)
 
+                    lock.acquire()
                     del online_clients[senderID]
+                    lock.release()
                     
                     continue
                 elif message["message_type"] == "CHAT":

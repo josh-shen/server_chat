@@ -10,7 +10,7 @@ def CHALLENGE(socket, addr, rand):
     message = resp.encode() + rand
     socket.sendto(message, addr)
 
-def AUTH_SUCCESS(socket, addr, clientID, cookie, password, salt, port, host):
+def AUTH_SUCCESS(socket, addr, clientID, cookie, port, host, password, salt):
     resp = f"AUTH_SUCCESS {str(clientID)} {str(port)} {str(host)} {cookie} "
     machine = create_machine(password, salt)
     encrypted_message = machine.encrypt_message(resp)
@@ -36,15 +36,15 @@ def CHAT_INIT(socket, machine, targetID, target_username, sessionID, session_sal
     encrypted_bytes = machine.encrypt_message(unencrypted_bytes)
     socket.send(encrypted_bytes)
 
-def CHAT_STARTED (socket, target_client_username, sessionID, machine, history, key):
+def CHAT_STARTED (socket, machine, targetID, target_client_username, sessionID, key, history):
     server_message = f"connected to client [{target_client_username}]"
     body = {"server_message": server_message, "key": key, "body": history}
-    message = messageDict(message_type="CHAT_STARTED", senderID="SERVER", target_username=target_client_username, sessionID=sessionID, message_body=body)
+    message = messageDict(message_type="CHAT_STARTED", senderID="SERVER", targetID=targetID, target_username=target_client_username, sessionID=sessionID, message_body=body)
     unencrypted_bytes = pickle.dumps(message)
     encrypted_bytes = machine.encrypt_message(unencrypted_bytes) 
     socket.send(encrypted_bytes)   
 
-def UNREACHABLE(socket, target_client_username, machine):
+def UNREACHABLE(socket, machine, target_client_username):
     body = f"client [{target_client_username}] is unreachable"
     message = messageDict(message_type="UNREACHABLE", senderID="SERVER_ERROR", target_username=target_client_username, message_body=body)
     unencrypted_bytes = pickle.dumps(message)
@@ -114,10 +114,13 @@ def TIMEOUT(session, sessionIDs, lock, connected_pair, online_clients, clientID,
         ]
 
         if client_pair:
+            lock.acquire()
             del online_clients[client_pair[0][0]]["public_key"]
             del online_clients[client_pair[0][1]]["public_key"]
 
             connected_pair.remove(client_pair[0])
+            lock.release()
+            
         # remove session
         lock.acquire()
         sessionIDs.remove(session)
@@ -134,7 +137,7 @@ def DISCONNECT(connectionID, client, inputs, online_clients):
     machine = create_machine(client["password"], online_clients[connectionID]["salt"])
     END_NOTIF(response_socket, machine)
 
-def CLOSE(senderID, targetID, sessionID, online_sessionIDs, database, lock, connected_pair, inputs, online_clients):
+def CLOSE(inputs, senderID, targetID, connected_pair, online_clients, sessionID, online_sessionIDs, database, lock):
     client_pair = [
         tupleElem for tupleElem in connected_pair 
         if tupleElem[0] == senderID 
@@ -145,13 +148,13 @@ def CLOSE(senderID, targetID, sessionID, online_sessionIDs, database, lock, conn
         lock.acquire()
         # exit timeout thread for session by setting timeout = 0
         session_timeouts[sessionID] = 0
-        lock.release()
 
         del online_clients[senderID]["public_key"]
         del online_clients[targetID]["public_key"]
         
         connected_pair.remove(client_pair[0])
         online_sessionIDs.remove(sessionID)
+        lock.release()
 
         client = database["users"].find_one({"_id": ObjectId(senderID)})
         target_client = database["users"].find_one({"_id": ObjectId(targetID)})

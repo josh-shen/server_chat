@@ -1,11 +1,10 @@
 from pymongo import MongoClient
 from pymongo.server_api import ServerApi
-from bson.objectid import ObjectId
 
 import utils
 
 def get_database():
-    CONNECTION_STRING = "mongodb+srv://joshausneh:ZT6XdqCnk7Diq0eZ@server-chat.bpryr3d.mongodb.net/?retryWrites=true&w=majority&appName=server-chat"
+    CONNECTION_STRING = ""
 
     client = MongoClient(CONNECTION_STRING, server_api=ServerApi('1'))
 
