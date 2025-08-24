@@ -8,7 +8,7 @@ from utils import terminal_print, clear_line, clear_screen
 import client_functions as cl
 
 # message receive thread (from either server or another client)
-def msg_recv(machine: aes_cipher):
+def msg_recv(server_machine: aes_cipher):
     global target_username
     global targetID
     global sessionID
@@ -22,7 +22,7 @@ def msg_recv(machine: aes_cipher):
             break
         
         # decrypt received message
-        decrypted_bytes = machine.decrypt_message(encrypted_bytes)
+        decrypted_bytes = server_machine.decrypt_message(encrypted_bytes)
         message = pickle.loads(decrypted_bytes)
 
         if message["message_type"] == "CHAT_INIT":
@@ -34,7 +34,7 @@ def msg_recv(machine: aes_cipher):
             # send back public key to server
             public_key = my_key.public_key()
             public_pem = public_key.export_key(format='PEM')
-            client_socket.CHAT_RESPONSE(machine, targetID, target_username, sessionID, public_pem)
+            client_socket.CHAT_RESPONSE(server_machine, targetID, target_username, sessionID, public_pem)
             continue 
         elif message["message_type"] == "CHAT_STARTED":
             
@@ -110,6 +110,7 @@ if __name__ == "__main__":
     # connection variables
     connect_type = 0
     reply = None
+    server_machine = None
     targetID = None
     target_username = None
     sessionID = None
@@ -143,26 +144,21 @@ if __name__ == "__main__":
         elif connect_type == 2: 
             try:
                 if reply == None:
-                    # start authentication process with server
+                    # begin TCP connection with server
                     client_socket.HELLO() 
-                elif reply != [] and reply[0] == "CHALLENGE":
-                    # challenge received from server, send response
-                    salt = reply[1]
-                    client_socket.RESPONSE(PASSWORD, salt.encode())
-                elif reply != [] and reply[0] == "AUTH_SUCCESS":
+                    client_socket.CONNECT()
+                elif reply["message_type"] == "AUTH_SUCCESS":
                     # authentication successful, start TCP connection with server
                     connect_type = 3
 
-                    # set ID received from the server
-                    client_socket.clientID = ID
+                    terminal_print("Authentication successful. Connected to server", "success")
 
-                    # begin TCP connection, and start message receive thread
-                    client_socket.tcp_client.connect((HOST, int(PORT)))
-                    client_socket.CONNECT(machine)
+                    client_socket.clientID = reply["targetID"]
 
-                    terminal_print("Authentication successful. Sending TCP connect message", "success")
+                    # create machine
+                    server_machine = create_machine(client_socket.clientID, reply["message_body"])
                     
-                    recv_thread = threading.Thread(target = msg_recv, args = (machine,))
+                    recv_thread = threading.Thread(target = msg_recv, args = (server_machine,))
                     recv_thread.start()
 
                     if os.path.exists(f"{USERNAME}.pem"):
@@ -173,30 +169,18 @@ if __name__ == "__main__":
                             my_key = ECC.generate(curve='p256')
                             data = my_key.export_key(format='PEM')
                             f.write(data)
-                elif reply != [] and reply[0] == "AUTH_FAIL":
+                elif reply["message_type"] == "AUTH_FAIL":
                     reply = None
-                    client_socket.udp_client.close()
-
-                    terminal_print("Authentication failed", "error")
+                    client_socket.tcp_client.close()
                     
                     connect_type = 1
+
+                    terminal_print("Authentication failed", "error")
                 
                 # response from server
                 if connect_type == 2:
-                    client_socket.udp_client.settimeout(5)
-                    reply = client_socket.udp_client.recv(1024)
-                    bytes_check = reply[:2]
-
-                    if bytes_check == b"as":
-                        machine = create_machine(PASSWORD, client_socket.salt)
-                        reply = machine.decrypt_message(reply[2:])
-                        reply = reply.decode("utf-8").split()
-                        ID = reply[1]
-                        PORT = reply[2]
-                        HOST = reply[3]
-                        client_socket.cookie = reply[4]
-                    else:
-                        reply = reply.decode("utf-8").split()
+                    bytes = client_socket.tcp_client.recv(65536)
+                    reply = pickle.loads(bytes)
             except socket.timeout:
                 reply = None
 
@@ -211,17 +195,17 @@ if __name__ == "__main__":
 
             if message_input.split()[0] == "chat" and len(message_input.split()) == 2:
                 target_username = message_input.split()[1]
-                client_socket.CHAT_REQUEST(machine, target_username)
+                client_socket.CHAT_REQUEST(server_machine, target_username)
             elif targetID != None and sessionID != None and message_input == "end chat":
-                client_socket.END_REQUEST(machine, targetID, target_username, sessionID)
+                client_socket.END_REQUEST(server_machine, targetID, target_username, sessionID)
             elif message_input == "logoff":
-                client_socket.LOG_OFF_REQUEST(machine, targetID, target_username, sessionID)
+                client_socket.LOG_OFF_REQUEST(server_machine, targetID, target_username, sessionID)
 
                 # reset connection variables
                 reply = None
                 connect_type = 0
             elif targetID != None and sessionID != None:
-                client_socket.CHAT(machine, message_machine, targetID, target_username, sessionID, message_input)
+                client_socket.CHAT(server_machine, message_machine, targetID, target_username, sessionID, message_input)
             else:
                 terminal_print("Invalid input. If you are trying to send a message, you are not currently connected to a chat session.", "error")
         else:

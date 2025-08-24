@@ -1,35 +1,19 @@
 import pickle, time
-from bson.objectid import ObjectId
 
 from utils import messageDict, session_timeouts, TIMEOUT_VAL, terminal_print
-from aes import create_machine
 
-# UDP section
-def CHALLENGE(socket, addr, rand):
-    resp = "CHALLENGE "
-    message = resp.encode() + rand
-    socket.sendto(message, addr)
+# AUTH section
+def AUTH_SUCCESS(socket, clientID, salt):
+    message = messageDict(message_type="AUTH_SUCCESS", senderID="SERVER", targetID=clientID, message_body=salt)
+    bytes = pickle.dumps(message)
+    socket.send(bytes)
 
-def AUTH_SUCCESS(socket, addr, clientID, cookie, port, host, password, salt):
-    resp = f"AUTH_SUCCESS {str(clientID)} {str(port)} {str(host)} {cookie} "
-    machine = create_machine(password, salt)
-    encrypted_message = machine.encrypt_message(resp)
-    auth_type = "as ".encode()
-    encrypted_message = auth_type + encrypted_message
-    socket.sendto(encrypted_message, addr)
+def AUTH_FAIL(socket):
+    message = messageDict(message_type="AUTH_FAIL", senderID="SERVER")
+    bytes = pickle.dumps(message)
+    socket.send(bytes)
 
-def AUTH_FAIL(socket, addr):
-    resp = "AUTH_FAIL "
-    message = resp.encode()
-    socket.sendto(message, addr)
-
-# TCP section
-def CONNECTED(socket, machine):
-    message = messageDict(message_type="CONNECTED", senderID="SERVER", message_body="connected to server")
-    unencrypted_bytes = pickle.dumps(message)
-    encrypted_bytes = machine.encrypt_message(unencrypted_bytes)
-    socket.send(encrypted_bytes)
-
+# CONNECTED section
 def CHAT_INIT(socket, machine, targetID, target_username, sessionID, session_salt):
     message = messageDict(message_type="CHAT_INIT", senderID="SERVER", targetID=targetID, target_username=target_username, sessionID=sessionID, message_body=session_salt)
     unencrypted_bytes = pickle.dumps(message)
@@ -131,10 +115,10 @@ def TIMEOUT(session, sessionIDs, lock, connected_pair, online_clients, clientID,
 
         terminal_print(f"Session {session} timed out\n", "error")
 
-def DISCONNECT(connectionID, client, inputs, online_clients):
-    socket_index = online_clients[connectionID]["index"]
+def DISCONNECT(clientID, inputs, online_clients):
+    socket_index = online_clients[clientID]["index"]
     response_socket = inputs[socket_index]
-    machine = create_machine(client["password"], online_clients[connectionID]["salt"])
+    machine = online_clients[clientID]["machine"]
     END_NOTIF(response_socket, machine)
 
 def CLOSE(inputs, senderID, targetID, connected_pair, online_clients, sessionID, online_sessionIDs, database, lock):
@@ -156,10 +140,7 @@ def CLOSE(inputs, senderID, targetID, connected_pair, online_clients, sessionID,
         online_sessionIDs.remove(sessionID)
         lock.release()
 
-        client = database["users"].find_one({"_id": ObjectId(senderID)})
-        target_client = database["users"].find_one({"_id": ObjectId(targetID)})
-        
-        DISCONNECT(senderID, client, inputs, online_clients)
-        DISCONNECT(targetID, target_client, inputs, online_clients)
+        DISCONNECT(senderID, inputs, online_clients)
+        DISCONNECT(targetID, inputs, online_clients)
 
         terminal_print(f"\nSession {sessionID} removed\n", "info")

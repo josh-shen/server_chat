@@ -1,5 +1,4 @@
 import bcrypt, pickle, queue, socket, select, threading
-from secrets import token_urlsafe
 from bson.objectid import ObjectId
 
 from aes import create_machine
@@ -13,20 +12,17 @@ if __name__ == "__main__":
     # connection information
     INTERNAL_HOST = utils.PRIVATE_ADDRESS
     EXTERNAL_HOST = utils.SERVER_ADDRESS
-    PORT = 3389
+    PORT = utils.PORT
 
-    # create server UDP socket
-    udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     # create server TCP socket
     tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     tcp_socket.setblocking(0)
 
     # sockets
-    inputs = [udp_socket, tcp_socket]
+    inputs = [tcp_socket]
     outputs = []
 
     # connection varaibles
-    address_to_ID = {}
     online_clients = {}
     connected_pair = []
     message_queues = {}
@@ -35,12 +31,6 @@ if __name__ == "__main__":
     # database query
     database = db.get_database()
     
-    # bind UDP socket
-    try:
-        udp_socket.bind((INTERNAL_HOST, PORT))
-    except socket.error as e:
-        utils.terminal_print(str(e), "error")
-        exit()
     # bind TCP socket
     try:
         tcp_socket.bind((INTERNAL_HOST, PORT))
@@ -55,61 +45,7 @@ if __name__ == "__main__":
         readable, writable, exceptional = select.select(inputs, outputs, inputs)
 
         for s in readable:
-            if s is udp_socket:
-                bytes, addr = udp_socket.recvfrom(2048)
-                data = bytes.decode("utf-8").split()
-
-                utils.terminal_print(f"Received: {data}")
-
-                if data[0] == "HELLO":
-                    client_username = data[1]
-
-                    client = db.get_document(database["users"], {"username": client_username})
-
-                    # client does not exist
-                    if not client:
-                        sv.AUTH_FAIL(udp_socket, addr)
-                        continue
-
-                    clientID = str(client["_id"])
-
-                    # client is already logged on
-                    if clientID in online_clients:
-                        sv.AUTH_FAIL(udp_socket, addr)
-                        continue
-
-                    address_to_ID[addr] = clientID
-
-                    # start auth challenge for client
-                    # TODO: do not store password in plaintext
-                    password = client["password"] 
-                    salt = bcrypt.gensalt()
-
-                    # create online client entry
-                    lock.acquire()
-                    online_clients[clientID] = {}
-                    online_clients[clientID]["salt"] = salt
-                    online_clients[clientID]["salted_password"] = bcrypt.hashpw(str(password).encode(), salt)
-                    lock.release()
-                    sv.CHALLENGE(udp_socket, addr, salt)
-                if data[0] == "RESPONSE":
-                    salted_password = data[1]
-                    clientID = address_to_ID[addr]
-                    client = db.get_document(database["users"], {"_id": ObjectId(clientID)})
-
-                    if online_clients[clientID]["salted_password"] == salted_password.encode():
-                        # authentication success, generate cookie to give to client
-                        cookie = online_clients[clientID]["cookie"] = token_urlsafe(16)
-                        password = client["password"] #clients[clientID]["password"]
-                        salt = online_clients[clientID]["salt"]
-                        sv.AUTH_SUCCESS(udp_socket, addr, clientID, cookie, PORT, EXTERNAL_HOST, password, salt)
-                    else:
-                        # authentication failed, remove client from online list
-                        lock.acquire()
-                        del online_clients[clientID]
-                        lock.release()
-                        sv.AUTH_FAIL(udp_socket, addr)
-            elif s is tcp_socket:
+            if s is tcp_socket:
                 # establish TCP connection with client
                 connection, client_address = tcp_socket.accept()
 
@@ -119,36 +55,57 @@ if __name__ == "__main__":
                 inputs.append(connection)
                 message_queues[connection] = queue.Queue()
             else:
-                id_encrypted_bytes = s.recv(65536) # 2^16 bytes
-                if len(id_encrypted_bytes) < 24:
+                bytes = s.recv(65536) # 2^16 bytes
+                if len(bytes) < 24:
                     # invalid message
                     continue
                 
-                id = id_encrypted_bytes[:24].decode("utf-8")
-                client = db.get_document(database["users"], {"_id": ObjectId(id)})
+                id = bytes[:24].decode("utf-8")
 
-                # decrypt received message - from here all messages will be encrypted
-                encrypted_bytes = id_encrypted_bytes[24:]
-                machine = create_machine(client["password"], online_clients[id]["salt"])
-                decrypted_bytes = machine.decrypt_message(encrypted_bytes)
-                message = pickle.loads(decrypted_bytes)
+                if id == "000000000000000000000000":
+                    message = pickle.loads(bytes[24:])          
+                    client = db.get_document(database["users"], {"username": message["username"]})
+                    
+                    # client does not exist
+                    if not client:
+                        sv.AUTH_FAIL(s)
+                        continue
 
-                utils.terminal_print(f"Received {message["message_type"]} from {message["senderID"]}")
+                    clientID = str(client["_id"])
+                    
+                    # client already logged in
+                    if clientID in online_clients:
+                        
+                        sv.AUTH_FAIL(s)
+                        continue
 
-                if message["message_type"] == "CONNECT":
-                    # verify authentication with cookie, add client to list of online clients
-                    if online_clients[id]["cookie"] == message["cookie"]:
-                        connected_clientID = message["senderID"]
+                    # hash password with salt
+                    hashed_password = bcrypt.hashpw(message["message_body"].encode(), client["salt"])
+                    
+                    if hashed_password == client["password"]:
+                        salt = bcrypt.gensalt()
+                        machine = create_machine(clientID, salt)
+
                         lock.acquire()
-                        online_clients[connected_clientID]["index"] = len(inputs) - 1  # index in inputs list
-                        online_clients[connected_clientID]["socket"] = s 
+                        online_clients[clientID] = {"machine": machine, "index": len(inputs) - 1, "socket": s} 
                         lock.release()
-                        sv.CONNECTED(s, machine)
+
+                        sv.AUTH_SUCCESS(s, clientID, salt)
                     else:
-                        # authentication failed - cookie mismatch
-                        utils.terminal_print("Authentication failed", "error")
+                        sv.AUTH_FAIL(s)
                     continue
-                elif message["message_type"] == "CHAT_REQUEST":
+                else:
+                    client = db.get_document(database["users"], {"_id": ObjectId(id)})
+
+                    # decrypt received message - from here all messages will be encrypted
+                    encrypted_bytes = bytes[24:]
+                    machine = online_clients[id]["machine"]
+                    decrypted_bytes = machine.decrypt_message(encrypted_bytes)
+                    message = pickle.loads(decrypted_bytes)
+
+                    utils.terminal_print(f"Received {message["message_type"]} from {message["senderID"]}")
+                    
+                if message["message_type"] == "CHAT_REQUEST":
                     senderID = message["senderID"]
 
                     target_client = db.get_document(database["users"], {"username": message["target_username"]})
@@ -211,7 +168,7 @@ if __name__ == "__main__":
 
                             socket_index = online_clients[targetID]["index"]
                             target_socket = inputs[socket_index]
-                            target_machine = create_machine(target_client["password"], online_clients[targetID]["salt"])
+                            target_machine = online_clients[targetID]["machine"]
                             sv.CHAT_INIT(target_socket, target_machine, senderID, message["username"], sessionID, session_salt)
                         else:
                             # target is already in a chat, or target is same as sender
@@ -249,11 +206,10 @@ if __name__ == "__main__":
 
                     socket_index = online_clients[targetID]["index"]
                     target_socket = inputs[socket_index]
-                    target_machine = create_machine(target_client["password"], online_clients[targetID]["salt"])
-                    sv.CHAT_STARTED(target_socket, target_machine, senderID, message["username"], sessionID, online_clients[senderID]["public_key"], chat_history)
+                    sv.CHAT_STARTED(target_socket, online_clients[targetID]["machine"], senderID, message["username"], sessionID, online_clients[senderID]["public_key"], chat_history)
                     
                     # start timer thread
-                    timer_thread = threading.Thread(target=sv.TIMEOUT, args=(sessionID, online_sessionIDs, lock, connected_pair, online_clients, senderID, sender_socket, target_socket, machine, target_machine))
+                    timer_thread = threading.Thread(target=sv.TIMEOUT, args=(sessionID, online_sessionIDs, lock, connected_pair, online_clients, senderID, sender_socket, target_socket, machine, online_clients[targetID]["machine"]))
                     timer_thread.start()
                 elif message["message_type"] == "END_REQUEST":
                     senderID = message["senderID"]
@@ -334,12 +290,12 @@ if __name__ == "__main__":
                 target_client = db.get_document(database["users"], {"_id": ObjectId(targetID)})
 
                 # encrypt message and send
-                machine = create_machine(target_client["password"], online_clients[targetID]["salt"])
+                machine = online_clients[targetID]["machine"]
                 unencrypted_bytes = pickle.dumps(next_message)
                 encrypted_bytes = machine.encrypt_message(unencrypted_bytes)
                 inputs[target].send(encrypted_bytes)
 
-                utils.terminal_print(f"Session {message['sessionID']}: sending [{next_message['message_body']}] to {next_message['target_username']}")
+                utils.terminal_print(f"Session {message['sessionID']}: sending [{next_message['message_body']}] to {next_message['targetID']}")
 
                 # reset timeout
                 lock.acquire()

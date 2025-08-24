@@ -3,6 +3,7 @@ import os
 TIMEOUT_VAL = 60
 PRIVATE_ADDRESS = 'localhost'   # server internal IP address, use 'localhost' for testing
 SERVER_ADDRESS = 'localhost'    # server external IP address, use 'localhost' for testing
+PORT = 3389
 session_timeouts = {}
 
 def messageDict(message_type, senderID, username=None, targetID=None, target_username=None, sessionID=None, message_body=None, cookie=None):
