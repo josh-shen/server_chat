@@ -173,7 +173,7 @@ if __name__ == "__main__":
                     reply = None
                     client_socket.tcp_client.close()
                     
-                    connect_type = 1
+                    connect_type = 0
 
                     terminal_print("Authentication failed", "error")
                 

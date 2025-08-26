@@ -49,7 +49,7 @@ if __name__ == "__main__":
                 # establish TCP connection with client
                 connection, client_address = tcp_socket.accept()
 
-                utils.terminal_print(f"\nNew connection from {client_address}\n", "success")
+                utils.terminal_print(f"New connection from {client_address}\n", "success")
 
                 connection.setblocking(0) # non-blocking
                 inputs.append(connection)
@@ -69,14 +69,15 @@ if __name__ == "__main__":
                     # client does not exist
                     if not client:
                         sv.AUTH_FAIL(s)
+                        utils.terminal_print("Authentication failed\n", "error")
                         continue
 
                     clientID = str(client["_id"])
                     
                     # client already logged in
                     if clientID in online_clients:
-                        
                         sv.AUTH_FAIL(s)
+                        utils.terminal_print("Authentication failed\n", "error")
                         continue
 
                     # hash password with salt
@@ -91,8 +92,10 @@ if __name__ == "__main__":
                         lock.release()
 
                         sv.AUTH_SUCCESS(s, clientID, salt)
+                        utils.terminal_print(f"Authentication successful: client {clientID} logged in\n", "success")
                     else:
                         sv.AUTH_FAIL(s)
+                        utils.terminal_print("Authentication failed\n", "error")
                     continue
                 else:
                     client = db.get_document(database["users"], {"_id": ObjectId(id)})
